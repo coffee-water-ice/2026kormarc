@@ -137,11 +137,17 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
         - region_data:    columns=["발행국", "발행국 부호"]
         - imprint_data:   columns=["임프린트"]
     """
+    import json
+    import os
+
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
 
+    env_creds = os.environ.get("GSPREAD_CREDENTIALS")
+    keyfile_dict = json.loads(env_creds) if env_creds else secrets["gspread"]
+
     creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        secrets["gspread"],
+        keyfile_dict,
         ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"],
     )
     gc = gspread.authorize(creds)
