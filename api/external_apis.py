@@ -419,11 +419,18 @@ def _extract_kpipa_publisher_name(data: dict) -> str | None:
 
         publishing_detail = product.get("PublishingDetail") or {}
 
-        publisher_name = (publishing_detail.get("Publisher") or {}).get("PublisherName")
+        # Publisher와 Imprint도 실제 응답에서 리스트로 옴: [{...}]
+        publisher = publishing_detail.get("Publisher") or {}
+        if isinstance(publisher, list):
+            publisher = publisher[0] if publisher else {}
+        publisher_name = publisher.get("PublisherName") if isinstance(publisher, dict) else None
         if publisher_name:
             return str(publisher_name)
 
-        imprint_name = (publishing_detail.get("Imprint") or {}).get("ImprintName")
+        imprint = publishing_detail.get("Imprint") or {}
+        if isinstance(imprint, list):
+            imprint = imprint[0] if imprint else {}
+        imprint_name = imprint.get("ImprintName") if isinstance(imprint, dict) else None
         if imprint_name:
             return str(imprint_name)
 
