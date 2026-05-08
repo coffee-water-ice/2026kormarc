@@ -1,0 +1,1296 @@
+출판유통통합전산망 OpenAPI 정의서
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+개 정 이 력
+
+
+버전        일자
+
+내용                             작성자
+
+승인자
+
+
+1.0
+
+2020-07-01
+
+최초 작성                                                                -               -
+
+1.1        2021-01-02   수정                                                                       -  
+             -
+
+1.2        2022-05-30   수정                                                                       -  
+            -
+
+1.3        2023-05-01   수정                                                                       -  
+            -
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 2 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+목  차
+
+1. 서비스 목록                                                                                           
+                                                                        4
+
+2. 서비스 명세                                                                                           
+                                                                        4
+
+2.1. 출판사 조회 서비스                                                                                     
+                                                     4
+
+가. 서비스 개요                                                                                           
+                                                       4
+
+나. 요청 메시지 명세                                                                                        
+                                                5
+
+다. 응답 메시지 명세                                                                                        
+                                                5
+
+라. 요청 / 응답 메시지 예제                                                                                   
+                                       5
+
+2.2. 도서목록 조회 서비스                                                                                    
+                                                  6
+
+가. 서비스 개요                                                                                           
+                                                       6
+
+나. 요청 메시지 명세                                                                                        
+                                                7
+
+다. 응답 메시지 명세                                                                                        
+                                                7
+
+라. 요청 / 응답 메시지 예제                                                                                   
+                                       8
+
+2.3. 도서상세 조회 서비스                                                                                    
+                                                  9
+
+가. 서비스 개요                                                                                           
+                                                       9
+
+나. 요청 메시지 명세                                                                                        
+                                             10
+
+다. 응답 메시지 명세                                                                                        
+                                             10
+
+라. 요청 / 응답 메시지 예제                                                                                   
+                                     10
+
+3. 출판유통통합전산망 OpenAPI 에러코드별 조치방안                                                                     
+                   13
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 3 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+1.  서비스 목록
+
+
+순번            서비스 ID
+
+1        OPEN-IF-001
+
+2        OPEN-IF-002
+
+3        OPEN-IF-003
+
+서비스명                                                    비고
+
+출판사 조회 서비스
+도서 목록 조회 서비스
+
+도서 상세 조회 서비스(onix)
+
+※ 오퍼레이션 목록은 각각의 서비스 명세에 표기
+
+2.  서비스 명세
+
+2.1. 출판사 조회 서비스
+
+가. 서비스 개요
+
+
+서비스
+정보
+
+서비스
+보안
+
+서비스 ID
+서비스명(국문)
+서비스명(영문)
+
+서비스 설명
+
+서비스 인증/권한
+
+메시지 레벨 암호화
+전송 레벨 암호화
+
+OPEN-IF-001
+
+출판사 조회 서비스
+
+출판사 정보를 조회한다.
+
+※ OPEN API 일 5,000회 조회 가능 (통합)
+
+※ 데이터 ROW수는 1회 최대 500건
+
+[O] 서비스 Key [ ] 없음
+
+[ ]WS-Security
+
+[O] 없음
+
+[X] HTTP   [O] HTTPS
+
+
+적용 기술
+수준
+
+서비스
+
+URL
+
+서비스
+배포 정보
+
+인터페이스 표준
+
+교환 데이터 표준
+개발환경
+운영환경
+
+서비스 버전
+
+[O] REST (GET)
+
+[O] XML              [O] JSON
+http://49.254.92.151:8092/api/openApi/metaInfoSvc
+https://bnk.kpipa.or.kr/api/openApi/metaInfoSvc
+
+1.2
+
+
+메시지 교환 유형
+메시지 로깅 수준
+사용  제약 사항 (비고)
+
+[O]Request-Response
+
+성공        [O] Result [O] Items          실패      [O] Result [] Items
+N/A
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 4 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+나. 요청 메시지 명세
+
+항목명(영문)        항목명(국문)        항목크기      항목구분              샘플데이터                               항목설명
+
+apiKey       서비스키              -            1       aAbB123…..%30          서비스키
+pblshrNm     출판사명            200          1       도서출판 길벗            출판사명
+rtnType      Content type        4            0       xml or json                Content type
+
+※ 항목구분 : 필수(1), 옵션(0), 1건 이상 복수건(1..n), 0건 또는 복수건(0..n)
+
+※ 검색조건 : 출판사명 - 2글자이상 입력
+
+다. 응답 메시지 명세
+
+항목명(영문)                 항목명(국문)              항목크기       항목구분         샘플데이터                     항목설명
+resultCode          결과코드                      10             1        INFO-000         결과코드
+resultMsg            결과메세지                  100            1        정상 처리 되♘습니다..      결과메세지
+totalCount           전체 결과 수                 4             1        2                    전체 결과 수
+items                 목록                                          0..n                            
+목록
+
+
+custmStndCd
+
+corpName
+
+출판사(거래처)표준
+
+코드
+출판사 명
+
+20
+
+200
+
+1        BNK-0000007
+
+도서출판    길
+
+1
+
+벗
+
+출판사(거래처)   표준코
+
+드
+
+출판사 명
+
+※ 항목구분 : 필수(1), 옵션(0), 1건 이상 복수건(1..n), 0건 또는 복수건(0..n)
+
+
+라. 요청 / 응답 메시지 예제
+
+REST(URI)
+
+-    개발 : http://49.254.92.151:8092/api/openApi/metaInfoSvc/getPblshrList?apiKey=서비스키
+&pblshrNm=도서출판 길벗
+
+-    운영 : https://bnk.kpipa.or.kr/api/openApi/metaInfoSvc/getPblshrList?apiKey=서비스키
+&pblshrNm=도서출판 길벗
+
+응답 메시지
+
+{
+
+"response": {
+
+"result": {
+
+"resultCode": "INFO-000",
+"resultMsg": "정상 처리되♘습니다.",
+"totalCount": 1
+
+},
+
+"body": {
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 5 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+"items": {
+
+"custmStndCd": "BNK-0000007",
+"corpName": "도서출판 길벗"
+
+}
+
+}
+
+}
+
+}
+
+2.2. 도서목록 조회 서비스
+
+가. 서비스 개요
+
+
+서비스
+정보
+
+서비스
+보안
+
+서비스 ID
+서비스명(국문)
+서비스명(영문)
+
+서비스 설명
+
+서비스 인증/권한
+
+메시지 레벨 암호화
+전송 레벨 암호화
+
+OPEN-IF-002
+
+도서목록 조회 서비스
+
+출판유통통합전산망에 등록되어 있는 도서의 목록을 조회한다.
+
+※ OPEN API 일 5,000회 조회 가능 (통합)
+
+※ 출판사 동의가 이루어진 데이터만 조회 가능
+
+※ 발행일이 2021.09.29 이후 데이터만 조회 가능
+
+※ 데이터 ROW수는 1회 최대 500 건
+
+[O] 서비스 Key [ ] 없음
+
+[ ]WS-Security
+
+[O] 없음
+
+[X] HTTP   [O] HTTPS
+
+
+적용 기술
+수준
+
+서비스
+
+URL
+
+서비스
+배포 정보
+
+인터페이스 표준
+
+교환 데이터 표준
+개발환경
+운영환경
+
+서비스 버전
+
+[O] REST (GET)
+
+[O] XML              [O] JSON
+http://49.254.92.151:8092/api/openApi/metaInfoSvc
+https://bnk.kpipa.or.kr/api/openApi/metaInfoSvc
+
+1.2
+
+
+메시지 교환 유형
+메시지 로깅 수준
+사용  제약 사항 (비고)
+
+[O]Request-Response
+
+성공        [O] Result [O] Items          실패      [O] Result [] Items
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 6 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+
+나. 요청 메시지 명세
+
+항목명(영문)            항목명(국문)
+
+항목     항목
+
+크기     구분
+
+샘플데이터                                  항목설명
+
+
+apiKey
+
+numOfRows
+
+pageNo
+startDate
+endDate
+custmStndCd
+corpNo
+
+title
+isbn
+rtnType
+
+서비스키
+
+한 페이지 결과 수
+
+페이지 번호
+시작일
+종료일
+
+출판사 표준코드
+사업자번호
+도서제목
+ISBN번호
+Content type
+
+-       1
+
+4       1
+
+4       1
+
+8       1
+
+8       1
+
+20      0
+
+20      0
+
+300     0
+
+100     0
+
+4       0
+
+aAbB123…..%30
+10
+
+1
+
+20210929
+
+20230929
+
+BNK-0000007
+1090111111
+
+마케팅
+
+9791160505887
+
+xml or json
+
+서비스키
+
+한 페이지 결과 수
+
+(max:100)
+페이지 번호
+시작일(발행일)
+종료일(발행일)
+출판사  표준코드
+사업자번호
+도서제목
+ISBN번호
+Content type
+
+※ 항목구분 : 필수(1), 옵션(0), 1건 이상 복수건(1..n), 0건 또는 복수건(0..n)
+
+
+다. 응답 메시지 명세
+
+항목명(영문)                  항목명(국문)             항목크기
+
+항목구
+분
+
+샘플데이터                     항목설명
+
+
+resultCode
+
+resultMsg
+numOfRows
+pageNo
+totalCount
+items
+
+rn
+
+custmStndCd
+
+corpName
+prodtIdVal
+prodtNm
+bookType
+prdform
+regDt
+cntrbtrNm
+priceAmt
+publdtDt
+
+결과코드
+
+결과메세지
+
+한 페이지 결과 수
+페이지 번호
+
+전체 결과 수
+목록
+
+순번
+출판사(거래처)표준코
+드
+
+출판사 명
+ISBN번호
+도서제목
+도서유형
+상품유형
+등록일
+저자명
+가격
+발행일
+
+10
+
+100
+
+4
+
+4
+
+4
+
+-
+4
+
+20
+
+200
+
+100
+
+300
+
+10
+
+10
+
+8
+
+20
+
+20
+
+8
+
+1
+
+1
+
+1
+
+1
+
+1
+
+0..n
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+INFO-000
+
+정상 처리 되♘습니다..
+
+5
+
+1
+
+5
+
+-
+1
+
+BNK-0000007
+
+도서출판 세모
+
+9791160505887
+
+30분 마케팅
+종이책
+반양장/소프트커버
+20190724
+
+이서진외 1명
+32000
+
+20181010
+
+결과코드
+
+결과메세지
+
+한 페이지 결과 수
+페이지 번호
+
+전체 결과 수
+목록
+
+순번
+
+출판사(거래처)표준코드
+출판사 명
+
+ISBN번호
+
+도서제목
+도서유형
+상품유형
+등록일
+저자명
+가격
+발행일
+
+※ 항목구분 : 필수(1), 옵션(0), 1건 이상 복수건(1..n), 0건 또는 복수건(0..n)
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 7 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+
+라. 요청 / 응답 메시지 예제
+
+REST(URI)
+
+-    개발 : http://49.254.92.151:8092/api/openApi/metaInfoSvc/getBookList?apiKey=서비스키
+&numOfRows=4&pageNo=1&startDate=20210929&endDate=20230929&custmStndCd=BNK-
+0000007
+
+-    운영 : https://bnk.kpipa.or.kr/api/openApi/metaInfoSvc/getBookList?apiKey=서비스키
+&numOfRows=4&pageNo=1&startDate=20210929&endDate=20230929&custmStndCd=BNK-
+0000007
+
+응답 메시지
+
+{
+
+"response": {
+
+"result": {
+
+"resultCode": "INFO-000",
+"resultMsg": "정상 처리되♘습니다.",
+"numOfRows": 4,
+
+"pageNo": 1,
+
+"totalCount": 3
+
+},
+
+"body": {
+
+"items": [
+
+{
+
+"rn": 1,
+
+"custmStndCd": "BNK-0000007",
+"corpName": "도서출판 세모",
+"prodtIdVal": "9788934992769",
+
+"prodtNm": "엔리코 페르미, 모든 것을 알았던 마지막 사람",
+"bookType": "종이책",
+
+"prdform": "반양장/소프트커버",
+“cntrbtrNm": "이서진외 1명",
+“priceAmt": 32000,
+
+"regDt": 20200731,
+
+"publdtDt": 20200709
+
+},
+
+{
+
+"rn": 2,
+
+"custmStndCd": "BNK-0000007",
+"corpName": "도서출판 세모",
+"prodtIdVal": "9788934992455",
+
+"prodtNm": "한국의 다서",
+
+"bookType": "종이책",
+
+"prdform": "양장",
+“cntrbtrNm": "이서진외 1명",
+“priceAmt": 12000,
+
+"regDt": 20200731,
+
+"publdtDt": 20200630
+
+},
+
+{
+
+"rn": 3,
+
+"custmStndCd": "BNK-0000007",
+"corpName": "도서출판 세모",
+"prodtIdVal": "9788934992004",
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 8 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+"prodtNm": "품위 있는 삶을 위한 철학",
+"bookType": "종이책",
+
+"prdform": "반양장/소프트커버",
+“cntrbtrNm": "이서진외 1명",
+“priceAmt": 16000,
+
+"regDt": 20200731,
+
+"publdtDt": 20200703
+
+}
+
+]
+
+}
+
+}
+
+}
+
+2.3. 도서상세 조회 서비스
+
+가. 서비스 개요
+
+
+서비스
+정보
+
+서비스
+보안
+
+서비스 ID
+서비스명(국문)
+서비스명(영문)
+
+서비스 설명
+
+서비스 인증/권한
+
+메시지 레벨 암호화
+전송 레벨 암호화
+
+OPEN-IF-003
+
+도서상세 조회 서비스
+
+출판유통통합전산망에 등록되어 있는 도서의 상세 내용을 조회한다.
+
+※ OPEN API 일 5,000회 조회 가능 (통합)
+
+※ 출판사 동의가 이루어진 데이터만 조회 가능
+
+※ 발행일이 2021.09.29 이후 데이터만 조회 가능
+
+[O] 서비스 Key [ ] 없음
+
+[ ]WS-Security
+
+[O] 없음
+
+[X] HTTP   [O] HTTPS
+
+
+적용 기술
+수준
+
+서비스
+
+URL
+
+서비스
+배포 정보
+
+인터페이스 표준
+
+교환 데이터 표준
+개발환경
+운영환경
+
+서비스 버전
+
+[O] REST (GET)
+
+[O] XML              [O] JSON
+http://49.254.92.151:8092/api/openApi/metaInfoSvc
+https://bnk.kpipa.or.kr/api/openApi/metaInfoSvc
+
+1.2
+
+
+메시지 교환 유형
+메시지 로깅 수준
+사용  제약 사항 (비고)
+
+[O]Request-Response
+
+성공        [O] Result [O] Items          실패      [O] Result [] Items
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 9 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+나. 요청 메시지 명세
+
+항목명(영문)           항목명(국문)          항목크기        항목구분                 샘플데이터                         
+항목설명
+
+apiKey               서비스키                -              1             aAbB123…..%30         서비스키
+
+isbn                  ISBN                     20             1             9788934990239        
+ISBN
+
+
+rtnType
+
+Content type          4              0
+
+xml or json
+
+Content type
+
+※ 항목구분 : 필수(1), 옵션(0), 1건 이상 복수건(1..n), 0건 또는 복수건(0..n)
+
+다. 응답 메시지 명세
+
+항목명(영문)                    항목명(국문)              항목크기       항목구분            샘플데이터                  
+항목설명
+resultCode              결과코드                        10             1             INFO-000        
+결과코드
+resultMsg                결과메세지                    100            1          정상 처리 되♘습니다..        
+결과메세지
+totalCount               전체 결과 수                   4             1                  1             
+전체 결과 수
+items                     목록                              -             1                  -        
+     목록
+
+Product              Onix data 참조
+
+※ 항목구분 : 필수(1), 옵션(0), 1건 이상 복수건(1..n), 0건 또는 복수건(0..n)
+
+
+라. 요청 / 응답 메시지 예제
+
+REST(URI)
+
+-    개발 : http://49.254.92.151:8092/api/openApi/metaInfoSvc/getBookDetail?apiKey=서비스키
+&isbn=9788934990239
+
+-    운영 : https://bnk.kpipa.or.kr/api/openApi/metaInfoSvc/getBookDetail?apiKey=서비스키
+&isbn=9788934990239
+
+응답 메시지
+
+{
+
+"response": {
+
+"result": {
+
+"resultCode": "INFO-000",
+"totalCount": 1,
+
+"resultMsg": "정상 처리되♘습니다."
+
+},
+
+"body": {
+
+"items": {
+
+"Product": {
+"NotificationType": "03",
+"ProductIdentifier": {
+
+"ProductIDType": 15,
+
+"IDValue": 9788934990239
+
+},
+
+"DescriptiveDetail": {
+"ProductForm": "BB",
+"Measure": [
+
+{
+
+"MeasureType": "02",
+
+"Measurement": 165,
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 10 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+"MeasureUnitCode": "mm"
+
+},
+
+{
+
+"MeasureType": "01",
+
+"Measurement": 190,
+"MeasureUnitCode": "mm"
+
+}
+
+],
+
+"TitleDetail": {
+"TitleType": "01",
+"TitleElement": {
+
+"TitleElementLevel": "02",
+
+"TitleText": "책 먹는 여우의 여행일기"
+
+}
+
+},
+
+"Contributor": {
+"ContributorRole": "A01",
+
+"PersonName": "프란치스카 비어만"
+
+},
+
+"EditionType": [
+"NED",
+"REV"
+
+],
+
+"Language": {
+"LanguageRole": "01",
+"LanguageCode": "kor",
+"CountryCode": "KR"
+
+},
+
+"Subject": {
+"MainSubject": "",
+
+"SubjectSchemeIdentifier": 93,
+
+"SubjectSchemeVersion": 1.3,
+"SubjectCode": "YB",
+
+"SubjectHeadingText": "유아용 도서, 그림책, 활동북"
+
+},
+
+"Audience": [
+
+{
+
+"AudienceCodeType": 24,
+
+"AudienceCodeValue": 0
+
+},
+
+{
+
+"AudienceCodeType": "01",
+
+"AudienceCodeValue": "02"
+
+}
+
+]
+
+},
+
+"CollateralDetail": {
+"TextContent": {
+
+"TextType": "03",
+
+"ContentAudience": "00",
+
+"Text": "책 먹는 여우와 전 세계 여행하기, 상상 속의 내 모습 그려 보기"
+
+},
+
+"SupportingResource": [
+
+{
+
+"ResourceContentType": "03",
+
+"ContentAudience": "00",
+
+"ResourceMode": "03",
+"ResourceVersion": {
+
+"ResourceForm": "02",
+"ResourceVersionFeature": {
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 11 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+"ResourceVersionFeatureType": "01",
+"FeatureValue": "D501"
+
+},
+
+"ResourceLink":    "https://    bnk.kpipa.or.kr/files/onix/2020/07/08/20200708165747-
+5725259384229951686.gif"
+
+}
+
+},
+
+{
+
+"ResourceContentType": "03",
+
+"ContentAudience": "00",
+
+"ResourceMode": "03",
+"ResourceVersion": {
+
+"ResourceForm": "02",
+"ResourceVersionFeature": {
+
+"ResourceVersionFeatureType": "01",
+"FeatureValue": "D501"
+
+},
+
+"ResourceLink":                                                                               
+"https://
+
+bnk.kpipa.or.kr/files/onix/2020/07/08/20200708165754876203398151742790.gif"
+
+}
+
+}
+
+]
+
+},
+
+"PublishingDetail": {
+"Imprint": {
+
+"ImprintIdentifier": {
+"ImprintIDType": "01",
+"IDTypeName": "자체지정",
+
+"IDValue": "20200527113017499618"
+
+},
+
+"ImprintName": "티라미슈"
+
+},
+
+"Publisher": {
+"PublishingRole": "01",
+"PublisherIdentifier": {
+
+"PublisherIDType": 16,
+"IDTypeName": "",
+
+"IDValue": "000000046074655X"
+
+},
+
+"PublisherName": "김영사"
+
+},
+
+"PublishingStatus": "04",
+"PublishingDate": {
+
+"PublishingDateRole": "01",
+
+"Date": 20200622
+
+}
+
+},
+
+"ProductSupply": {
+"SupplyDetail": {
+
+"Price": {
+"PriceAmount": 12000
+
+}
+
+}
+
+}
+
+}
+
+}
+
+}
+
+}
+
+}
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 12 -
+
+
+출판유통통합전산망 OpenAPI 정의서
+
+3.  출판유통통합전산망 OpenAPI 에러코드별 조치방안
+
+
+Code
+
+INFO-100
+
+INFO-105
+
+INFO-120
+ERROR-301
+
+ERROR-302
+ERROR-303
+ERROR-304
+ERROR-305
+
+ERROR-306
+
+설명
+
+인증키가 유효하지 않습니다.
+인증키가 없는 경우,
+출판유통통합전산망에서 인증키를
+신청하십시오.
+
+상품이 없습니다.
+ISBN을 확인하십시오.
+
+지원되지 않은 ONIX 요청입니다.
+필수 값이 누락되어 있습니다.
+요청인자를 참고 하십시오.
+기간설정 값을 확인하십시오.
+
+요청인자 중 dateType를 확인하십시오.
+
+시작일 값을 확인하십시오.
+
+요청인자 중 startDate를 확인하십시오.
+
+종료일 값을 확인하십시오.
+
+요청인자 중 endDate를 확인하십시오.
+
+페이지 결과 값을 확인하십시오.
+요청인자 중 numOfRows를
+확인하십시오.
+
+페이지 번호 값을 확인하십시오.
+요청인자 중 pageNo를 확인하십시오.
+
+조치 방안
+
+출판유통통합전산망 회원서비스에서 인증키 신청할 수 있습니다.
+
+도서목록조회에서 ISBN을 확인바랍니다.
+관리자에게 확인합니다.
+
+기술문서를 다시 한번 확인바랍니다.
+
+기술문서를 다시 한번 확인바랍니다.
+기술문서를 다시 한번 확인바랍니다.
+기술문서를 다시 한번 확인바랍니다.
+기술문서를 다시 한번 확인바랍니다.
+
+기술문서를 다시 한번 확인바랍니다.
+
+
+ERROR-500
+ERROR-600
+ERROR-601
+
+서버 오류입니다.
+
+지속적으로 발생시 관리자에게
+문의 바랍니다.
+
+데이터베이스 연결 오류입니다.
+지속적으로 발생시 관리자에게
+문의 바랍니다.
+
+SQL 문장 오류 입니다.
+지속적으로 발생시 관리자에게
+문의 바랍니다.
+
+관리자에게 확인합니다.
+관리자에게 확인합니다.
+관리자에게 확인합니다.
+
+
+출판유통합전산망 OpenAPI 활용가이드 1.0
+
+- 13 -
+
