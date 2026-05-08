@@ -388,19 +388,39 @@ def get_mcst_address(publisher_name: str) -> tuple[str, list, list[str]]:
 # ============================================================
 
 def _extract_kpipa_publisher_name(data: dict) -> str | None:
-    """KPIPA API 응답 dict에서 PublisherName 값을 추출한다."""
+    """
+    KPIPA API 응답 dict에서 PublisherName 값을 추출한다.
+
+    실제 응답 경로:
+      response → body → items → Product → PublishingDetail → Publisher → PublisherName
+    ImprintName은 PublisherName 부재 시 보조로 사용한다.
+    """
     if not data:
         return None
-    if data.get("PublisherName"):
-        return str(data["PublisherName"])
-    result = data.get("result") or {}
-    if isinstance(result, dict) and result.get("PublisherName"):
-        return str(result["PublisherName"])
-    result_list = data.get("resultList") or []
-    if isinstance(result_list, list) and result_list:
-        first = result_list[0]
-        if isinstance(first, dict) and first.get("PublisherName"):
-            return str(first["PublisherName"])
+
+    try:
+        product = (
+            data.get("response", {})
+                .get("body", {})
+                .get("items", {})
+                .get("Product", {})
+        )
+        publishing_detail = product.get("PublishingDetail", {})
+
+        publisher_name = (
+            publishing_detail.get("Publisher", {}).get("PublisherName")
+        )
+        if publisher_name:
+            return str(publisher_name)
+
+        imprint_name = (
+            publishing_detail.get("Imprint", {}).get("ImprintName")
+        )
+        if imprint_name:
+            return str(imprint_name)
+    except (AttributeError, TypeError):
+        pass
+
     return None
 
 
