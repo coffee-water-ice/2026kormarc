@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 # 내부 모듈
 from core.field_rules import build_260_field, build_300_field
-from api.external_apis import build_pub_location_bundle, get_aladin_item_by_isbn
+from api.external_apis import build_pub_location_bundle, get_aladin_item_by_isbn, get_kpipa_book_detail
 from database.feedback_logger import init_db, save_feedback_record
 
 logger = logging.getLogger("isbn2marc")
@@ -110,6 +110,12 @@ class FeedbackResult(BaseModel):
     id:     Optional[int] = None
 
 
+class KpipaResult(BaseModel):
+    isbn:  str
+    data:  dict
+    error: Optional[str] = None
+
+
 # ============================================================
 # 헬퍼
 # ============================================================
@@ -130,7 +136,7 @@ def _load_runtime_secrets() -> dict:
         data = loaded if isinstance(loaded, dict) else {}
 
     # 2) 환경변수로 덮어쓰기 (배포 환경 우선)
-    for key in ("ALADIN_TTB_KEY", "OPENAI_API_KEY", "NLK_CERT_KEY"):
+    for key in ("ALADIN_TTB_KEY", "OPENAI_API_KEY", "NLK_CERT_KEY", "KPIPA_API_KEY"):
         env_val = os.environ.get(key)
         if env_val:
             data[key] = env_val
@@ -236,6 +242,20 @@ async def convert_batch(req: BatchRequest):
     secrets = _load_runtime_secrets()
     results = [_run_conversion(job, secrets) for job in req.jobs]
     return BatchResult(results=results)
+
+
+@app.get("/api/kpipa/{isbn}", response_model=KpipaResult, tags=["KPIPA"])
+async def kpipa_detail(isbn: str):
+    """
+    KPIPA 공식 OpenAPI로 ISBN 도서 상세 정보를 조회한다.
+
+    - **isbn**: ISBN-13 (하이픈 포함 가능)
+    """
+    secrets = _load_runtime_secrets()
+    api_key = secrets.get("KPIPA_API_KEY", "")
+    clean_isbn = isbn.strip().replace("-", "")
+    data, err = get_kpipa_book_detail(clean_isbn, api_key)
+    return KpipaResult(isbn=clean_isbn, data=data, error=err)
 
 
 @app.post("/api/feedback", response_model=FeedbackResult, tags=["피드백"])

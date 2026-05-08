@@ -122,6 +122,34 @@ def convert_batch(jobs: list[list]) -> list[dict]:
         return [{"isbn": j[0], "error": f"❌ 일괄 변환 실패: {e}"} for j in jobs]
 
 
+# ── KPIPA API 조회 ───────────────────────────────────────────
+
+def query_kpipa(isbn: str) -> dict:
+    """
+    KPIPA 공식 OpenAPI 도서 상세 조회.
+
+    Returns:
+        {
+            "isbn": str,
+            "data": dict,   # KPIPA 원본 응답
+            "error": str | None,
+        }
+    """
+    try:
+        resp = requests.get(
+            _url(f"/api/kpipa/{isbn}"),
+            timeout=_default_timeout(),
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.Timeout:
+        return {"isbn": isbn, "data": {}, "error": "⏱️ KPIPA 요청 시간 초과"}
+    except requests.exceptions.ConnectionError:
+        return {"isbn": isbn, "data": {}, "error": "🔌 백엔드 서버에 연결할 수 없습니다"}
+    except Exception as e:
+        return {"isbn": isbn, "data": {}, "error": f"❌ KPIPA 조회 실패: {e}"}
+
+
 # ── 피드백 저장 ──────────────────────────────────────────────
 
 def submit_feedback(

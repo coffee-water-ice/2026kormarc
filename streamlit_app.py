@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from api_client import convert_isbn
+from api_client import convert_isbn, query_kpipa
 
 
 st.set_page_config(page_title="ISBN → MARC", page_icon="📚", layout="wide")
@@ -26,3 +26,14 @@ if st.button("변환 실행", type="primary"):
             st.code(result.get("mrk_text", ""), language="text")
             st.subheader("메타 정보")
             st.json(result.get("meta", {}))
+
+        st.divider()
+        st.subheader("KPIPA API 조회 결과")
+        with st.spinner("KPIPA 조회 중..."):
+            kpipa = query_kpipa(isbn)
+
+        if kpipa.get("error"):
+            st.error(kpipa["error"])
+        else:
+            st.success("KPIPA 조회 완료")
+            st.json(kpipa.get("data", {}))

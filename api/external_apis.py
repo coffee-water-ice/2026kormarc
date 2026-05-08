@@ -143,8 +143,30 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
 
-    env_creds = os.environ.get("GSPREAD_CREDENTIALS")
-    keyfile_dict = json.loads(env_creds) if env_creds else secrets["gspread"]
+    env_creds = os.environ.get("GSPREAD_CREDENTIALS", "").strip()
+    keyfile_dict = None
+
+    if env_creds:
+        # 1. 만약 전체가 따옴표로 감싸져 있다면 제거 (Render 등 배포 환경에서 흔히 발생)
+        if (env_creds.startswith('"') and env_creds.endswith('"')) or \
+           (env_creds.startswith("'") and env_creds.endswith("'")):
+            env_creds = env_creds[1:-1]
+
+        try:
+            # 2. 표준 JSON 파싱 시도
+            keyfile_dict = json.loads(env_creds)
+        except json.JSONDecodeError:
+            try:
+                # 3. Invalid \escape 에러 대응: 실제 줄바꿈(\n)이 포함된 경우 \n 문자열로 치환하여 재시도
+                fixed_creds = env_creds.replace('\n', '\\n')
+                keyfile_dict = json.loads(fixed_creds)
+            except Exception as e:
+                raise ValueError(f"GSPREAD_CREDENTIALS JSON 형식이 올바르지 않습니다: {e}")
+    else:
+        keyfile_dict = secrets.get("gspread")
+
+    if not keyfile_dict:
+        raise ValueError("구글 시트 인증 정보(GSPREAD_CREDENTIALS)를 찾을 수 없습니다.")
 
     creds = ServiceAccountCredentials.from_json_keyfile_dict(
         keyfile_dict,
@@ -239,6 +261,42 @@ def get_country_code_by_region(region_name: str, region_data: pd.DataFrame) -> s
         return "   "
     except Exception:
         return "   "
+
+
+# ============================================================
+# KPIPA 공식 OpenAPI (ISBN → 도서 상세)
+# ============================================================
+
+def get_kpipa_book_detail(isbn: str, api_key: str) -> tuple[dict, str | None]:
+    """
+    KPIPA 공식 OpenAPI로 ISBN 도서 상세 정보를 조회한다.
+
+    Args:
+        isbn:    ISBN-13 문자열
+        api_key: KPIPA 서비스키 (KPIPA_API_KEY 환경변수)
+
+    Returns:
+        (response_dict, error_msg or None)
+        오류 시 response_dict = {}, error_msg = 설명 문자열
+    """
+    if not api_key:
+        return {}, "KPIPA_API_KEY가 설정되지 않았습니다."
+
+    url = "https://bnk.kpipa.or.kr/api/openApi/metaInfoSvc/getBookDetail"
+    params = {"apiKey": api_key, "isbn": isbn}
+    headers = {"Accept": "application/json"}
+
+    try:
+        res = requests.get(url, params=params, headers=headers, timeout=15)
+        res.raise_for_status()
+        data = res.json()
+        return data, None
+    except requests.exceptions.Timeout:
+        return {}, "KPIPA API 요청 시간 초과"
+    except requests.exceptions.HTTPError as e:
+        return {}, f"KPIPA API HTTP 오류: {e}"
+    except Exception as e:
+        return {}, f"KPIPA API 예외: {e}"
 
 
 # ============================================================
