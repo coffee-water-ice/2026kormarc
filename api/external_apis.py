@@ -191,7 +191,8 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
             imprint_frames.extend(row[0] for row in ws.get_all_values()[1:] if row)
     imprint_data = pd.DataFrame(imprint_frames, columns=["임프린트"])
 
-    return publisher_data, region_data, imprint_data
+    _PUBLISHER_DB_CACHE = (publisher_data, region_data, imprint_data)
+    return _PUBLISHER_DB_CACHE
 
 
 # ============================================================
