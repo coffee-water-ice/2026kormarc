@@ -402,19 +402,33 @@ def _extract_kpipa_publisher_name(data: dict) -> str | None:
     if not data:
         return None
 
-    response         = data.get("response") or {}
-    body             = response.get("body") or {}
-    items            = body.get("items") or {}
-    product          = items.get("Product") or {}
-    publishing_detail = product.get("PublishingDetail") or {}
+    try:
+        response = data.get("response") or {}
+        body     = response.get("body") or {}
+        items    = body.get("items") or {}
 
-    publisher_name = (publishing_detail.get("Publisher") or {}).get("PublisherName")
-    if publisher_name:
-        return str(publisher_name)
+        # 실제 응답에서 items가 리스트로 오는 경우 대응
+        if isinstance(items, list):
+            items = items[0] if items else {}
 
-    imprint_name = (publishing_detail.get("Imprint") or {}).get("ImprintName")
-    if imprint_name:
-        return str(imprint_name)
+        product = items.get("Product") or {}
+
+        # Product도 리스트로 오는 경우 대응
+        if isinstance(product, list):
+            product = product[0] if product else {}
+
+        publishing_detail = product.get("PublishingDetail") or {}
+
+        publisher_name = (publishing_detail.get("Publisher") or {}).get("PublisherName")
+        if publisher_name:
+            return str(publisher_name)
+
+        imprint_name = (publishing_detail.get("Imprint") or {}).get("ImprintName")
+        if imprint_name:
+            return str(imprint_name)
+
+    except (AttributeError, TypeError, IndexError, KeyError):
+        pass
 
     return None
 
