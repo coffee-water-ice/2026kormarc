@@ -6,7 +6,7 @@ from api_client import convert_isbn, query_kpipa
 
 
 st.set_page_config(page_title="ISBN → MARC", page_icon="📚", layout="wide")
-st.title("ISBN → 300 MARC 변환기")
+st.title("ISBN → 300 MARC 변환기(KPIPA API 포함")
 st.caption("FastAPI 백엔드(`/api/convert`)를 호출해 MARC 결과를 보여줍니다.")
 
 isbn = st.text_input("ISBN-13", placeholder="예: 9788937462849").strip()
