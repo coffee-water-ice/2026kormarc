@@ -387,14 +387,35 @@ def get_mcst_address(publisher_name: str) -> tuple[str, list, list[str]]:
 # 발행지 통합 번들 (260 생성에 직접 사용)
 # ============================================================
 
+def _extract_kpipa_publisher_name(data: dict) -> str | None:
+    """KPIPA API 응답 dict에서 PublisherName 값을 추출한다."""
+    if not data:
+        return None
+    if data.get("PublisherName"):
+        return str(data["PublisherName"])
+    result = data.get("result") or {}
+    if isinstance(result, dict) and result.get("PublisherName"):
+        return str(result["PublisherName"])
+    result_list = data.get("resultList") or []
+    if isinstance(result_list, list) and result_list:
+        first = result_list[0]
+        if isinstance(first, dict) and first.get("PublisherName"):
+            return str(first["PublisherName"])
+    return None
+
+
 def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict) -> dict:
     """
-    KPIPA → 임프린트 DB → 문체부 순서로 발행지를 조회하고
+    KPIPA 공식 API → Google Sheets DB → 문체부 순서로 발행지를 조회하고
     260/008 필드 생성에 필요한 정보를 dict로 묶어 반환한다.
+
+    탐색 순서:
+      [API 조회 성공 시] KPIPA API(PublisherName) → Google Sheets DB → 문체부
+      [API 조회 실패 시] 알라딘 출판사명 → Google Sheets DB → 임프린트 DB → 문체부
 
     Args:
         isbn:               ISBN-13
-        publisher_name_raw: 알라딘 API에서 받은 출판사명 원본
+        publisher_name_raw: 알라딘 API에서 받은 출판사명 원본 (API 실패 fallback용)
         secrets:            Google Sheets 인증용 secrets dict
 
     Returns:
@@ -414,37 +435,67 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
         publisher_data, region_data, imprint_data = load_publisher_db(secrets)
         debug.append("✓ 구글시트 DB 적재 성공")
 
-        # 1) KPIPA ISBN → 출판사명
-        kpipa_full, _, err = get_publisher_name_from_isbn_kpipa(isbn)
-        if err:
-            debug.append(f"KPIPA 검색: {err}")
+        place_raw: str | None = None
+        source = "FALLBACK"
+        resolved = (publisher_name_raw or "").strip()
 
-        rep_name, aliases = split_publisher_aliases(kpipa_full or publisher_name_raw or "")
-        resolved = rep_name or (publisher_name_raw or "").strip()
-        debug.append(f"대표 출판사명: {resolved} | ALIAS: {aliases}")
+        # 1) KPIPA 공식 API 조회
+        api_key = (secrets or {}).get("KPIPA_API_KEY", "")
+        kpipa_api_data, kpipa_api_err = get_kpipa_book_detail(isbn, api_key)
+        kpipa_api_publisher = _extract_kpipa_publisher_name(kpipa_api_data)
 
-        # 2) KPIPA DB 검색
-        place_raw, msgs = search_publisher_location_with_alias(resolved, publisher_data)
-        debug += msgs
-        source = "KPIPA_DB"
+        if kpipa_api_err:
+            debug.append(f"KPIPA API: {kpipa_api_err}")
+        else:
+            debug.append("✓ KPIPA API 조회 성공")
 
-        # 3) 임프린트 DB 검색 (2 실패 시)
-        if place_raw in _UNKNOWN:
-            place_raw, msgs = find_main_publisher_from_imprints(
-                resolved, imprint_data, publisher_data
-            )
+        if kpipa_api_publisher:
+            # ── API 성공 경로 ──────────────────────────────────
+            rep_name, aliases = split_publisher_aliases(kpipa_api_publisher)
+            resolved = rep_name or kpipa_api_publisher
+            debug.append(f"[API경로] 대표 출판사명: {resolved} | ALIAS: {aliases}")
+
+            # 2a) Google Sheets DB 검색
+            place_raw, msgs = search_publisher_location_with_alias(resolved, publisher_data)
             debug += msgs
-            if place_raw:
-                source = "IMPRINT→KPIPA"
+            source = "KPIPA_API→DB"
 
-        # 4) 문체부 검색 (3 실패 시)
-        if not place_raw or place_raw in _UNKNOWN:
-            mcst_addr, _, mcst_dbg = get_mcst_address(resolved)
-            debug += mcst_dbg
-            if mcst_addr not in ("미확인", "오류 발생", None):
-                place_raw, source = mcst_addr, "MCST"
+            # 2b) 문체부 검색 (Google Sheets 실패 시)
+            if place_raw in _UNKNOWN:
+                mcst_addr, _, mcst_dbg = get_mcst_address(resolved)
+                debug += mcst_dbg
+                if mcst_addr not in ("미확인", "오류 발생", None):
+                    place_raw, source = mcst_addr, "KPIPA_API→MCST"
 
-        # 5) 최종 fallback
+        else:
+            # ── API 실패 경로 (알라딘 출판사명 사용) ──────────
+            debug.append("KPIPA API 미조회 → 알라딘 출판사명으로 전환")
+            rep_name, aliases = split_publisher_aliases(publisher_name_raw or "")
+            resolved = rep_name or (publisher_name_raw or "").strip()
+            debug.append(f"[알라딘경로] 대표 출판사명: {resolved} | ALIAS: {aliases}")
+
+            # 2) Google Sheets DB 검색
+            place_raw, msgs = search_publisher_location_with_alias(resolved, publisher_data)
+            debug += msgs
+            source = "ALADIN→DB"
+
+            # 3) 임프린트 DB 검색
+            if place_raw in _UNKNOWN:
+                place_raw, msgs = find_main_publisher_from_imprints(
+                    resolved, imprint_data, publisher_data
+                )
+                debug += msgs
+                if place_raw:
+                    source = "ALADIN→IMPRINT→DB"
+
+            # 4) 문체부 검색
+            if not place_raw or place_raw in _UNKNOWN:
+                mcst_addr, _, mcst_dbg = get_mcst_address(resolved)
+                debug += mcst_dbg
+                if mcst_addr not in ("미확인", "오류 발생", None):
+                    place_raw, source = mcst_addr, "ALADIN→MCST"
+
+        # 최종 fallback
         if not place_raw or place_raw in _UNKNOWN:
             place_raw, source = "출판지 미상", "FALLBACK"
             debug.append("⚠️ 모든 경로 실패 → '출판지 미상'")
