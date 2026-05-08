@@ -31,7 +31,8 @@ def _url(path: str) -> str:
 
 
 def _default_timeout() -> int:
-    return 120  # 알라딘·GPT 호출 포함해서 넉넉히
+    # KPIPA API, MCST, 알라딘, Google Sheets 직렬 호출 합산 + Render 콜드 스타트 여유
+    return 240
 
 
 # ── MARC 변환 ────────────────────────────────────────────────

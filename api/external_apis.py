@@ -288,12 +288,12 @@ def get_kpipa_book_detail(isbn: str, api_key: str) -> tuple[dict, str | None]:
     headers = {"Accept": "application/json"}
 
     try:
-        res = requests.get(url, params=params, headers=headers, timeout=15)
+        res = requests.get(url, params=params, headers=headers, timeout=8)
         res.raise_for_status()
         data = res.json()
         return data, None
     except requests.exceptions.Timeout:
-        return {}, "KPIPA API 요청 시간 초과"
+        return {}, "KPIPA API 요청 시간 초과 (8s)"
     except requests.exceptions.HTTPError as e:
         return {}, f"KPIPA API HTTP 오류: {e}"
     except Exception as e:
