@@ -395,32 +395,26 @@ def _extract_kpipa_publisher_name(data: dict) -> str | None:
     실제 응답 경로:
       response → body → items → Product → PublishingDetail → Publisher → PublisherName
     ImprintName은 PublisherName 부재 시 보조로 사용한다.
+
+    NOTE: `or {}` 패턴을 사용해 값이 null인 키도 안전하게 처리한다.
+    (.get("key", {}) 는 키가 없을 때만 {} 반환; 키가 있고 값이 None이면 None 반환)
     """
     if not data:
         return None
 
-    try:
-        product = (
-            data.get("response", {})
-                .get("body", {})
-                .get("items", {})
-                .get("Product", {})
-        )
-        publishing_detail = product.get("PublishingDetail", {})
+    response         = data.get("response") or {}
+    body             = response.get("body") or {}
+    items            = body.get("items") or {}
+    product          = items.get("Product") or {}
+    publishing_detail = product.get("PublishingDetail") or {}
 
-        publisher_name = (
-            publishing_detail.get("Publisher", {}).get("PublisherName")
-        )
-        if publisher_name:
-            return str(publisher_name)
+    publisher_name = (publishing_detail.get("Publisher") or {}).get("PublisherName")
+    if publisher_name:
+        return str(publisher_name)
 
-        imprint_name = (
-            publishing_detail.get("Imprint", {}).get("ImprintName")
-        )
-        if imprint_name:
-            return str(imprint_name)
-    except (AttributeError, TypeError):
-        pass
+    imprint_name = (publishing_detail.get("Imprint") or {}).get("ImprintName")
+    if imprint_name:
+        return str(imprint_name)
 
     return None
 
@@ -463,12 +457,25 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
         # 1) KPIPA 공식 API 조회
         api_key = (secrets or {}).get("KPIPA_API_KEY", "")
         kpipa_api_data, kpipa_api_err = get_kpipa_book_detail(isbn, api_key)
-        kpipa_api_publisher = _extract_kpipa_publisher_name(kpipa_api_data)
 
         if kpipa_api_err:
-            debug.append(f"KPIPA API: {kpipa_api_err}")
+            debug.append(f"KPIPA API 오류: {kpipa_api_err}")
+            kpipa_api_publisher = None
         else:
-            debug.append("✓ KPIPA API 조회 성공")
+            result_code = (
+                (kpipa_api_data.get("response") or {})
+                .get("result", {})
+                .get("resultCode", "?")
+            )
+            kpipa_api_publisher = _extract_kpipa_publisher_name(kpipa_api_data)
+            if kpipa_api_publisher:
+                debug.append(
+                    f"✓ KPIPA API 성공 (resultCode={result_code}, 출판사: {kpipa_api_publisher})"
+                )
+            else:
+                debug.append(
+                    f"KPIPA API 응답 있음 (resultCode={result_code}) → PublisherName 없음"
+                )
 
         if kpipa_api_publisher:
             # ── API 성공 경로 ──────────────────────────────────
