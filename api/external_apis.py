@@ -22,6 +22,9 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
+# 전역 캐시 변수 (매 요청마다 구글 시트를 다시 읽지 않도록 방지)
+_PUBLISHER_DB_CACHE: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None
+
 
 # ============================================================
 # 정규화 유틸
@@ -65,7 +68,7 @@ def get_aladin_item_by_isbn(isbn: str, secrets: dict) -> tuple[dict, str | None]
 
 def normalize_publisher_name(name: str) -> str:
     """출판사명 표준화 (공백·법인격·괄호 제거, 소문자 변환)."""
-    return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|주)도서출판|출판사", "", name or "").lower()
+    return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|주\)도서출판|출판사", "", name or "").lower()
 
 
 def normalize_stage2(name: str) -> str:
@@ -137,6 +140,10 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
         - region_data:    columns=["발행국", "발행국 부호"]
         - imprint_data:   columns=["임프린트"]
     """
+    global _PUBLISHER_DB_CACHE
+    if _PUBLISHER_DB_CACHE is not None:
+        return _PUBLISHER_DB_CACHE
+
     import json
     import os
 
@@ -191,7 +198,8 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
             imprint_frames.extend(row[0] for row in ws.get_all_values()[1:] if row)
     imprint_data = pd.DataFrame(imprint_frames, columns=["임프린트"])
 
-    _PUBLISHER_DB_CACHE = (publisher_data, region_data, imprint_data)
+    result = (publisher_data, region_data, imprint_data)
+    _PUBLISHER_DB_CACHE = result
     return _PUBLISHER_DB_CACHE
 
 

@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # 내부 모듈
+from core.marc_builder import MarcBuilder
 from core.field_rules import build_260_field, build_300_field
 from api.external_apis import build_pub_location_bundle, get_aladin_item_by_isbn, get_kpipa_book_detail
 from database.feedback_logger import init_db, save_feedback_record
@@ -176,20 +177,27 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
         # ── 300 ──────────────────────────────────────────────
         tag_300, f_300 = build_300_field(item)
 
+        # ── Record 조립 및 데이터 생성 ─────────────────────
+        builder = MarcBuilder()
+        if f_260:
+            builder.rec.add_field(f_260)
+        if f_300:
+            builder.rec.add_field(f_300)
+
+        # MRK 텍스트 조립 및 MARC 바이너리 생성
+        mrk_text = "\n".join(filter(None, [tag_260, tag_300]))
+        marc_bytes = builder.rec.as_marc()
+
         meta = {
             "isbn": isbn,
             "aladin_title": (item or {}).get("title", ""),
             "publisher_raw": publisher_raw,
             "pubyear": pubyear,
-            "tag_260": tag_260,
-            "tag_300": tag_300,
+            "tag_260": tag_260 or "",
+            "tag_300": tag_300 or "",
             "bundle_source": bundle.get("source"),
             "debug_lines": bundle.get("debug", []),
         }
-
-        # MRK 텍스트 조립 (실제로는 generate_all_oneclick 반환값 사용)
-        mrk_text = "\n".join([tag_260, tag_300])
-        marc_bytes = b""  # 실제로는 record.as_marc()
 
         return ConvertResult(
             isbn=isbn,
