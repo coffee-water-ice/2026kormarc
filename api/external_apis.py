@@ -65,7 +65,7 @@ def get_aladin_item_by_isbn(isbn: str, secrets: dict) -> tuple[dict, str | None]
 
 def normalize_publisher_name(name: str) -> str:
     """출판사명 표준화 (공백·법인격·괄호 제거, 소문자 변환)."""
-    return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name or "").lower()
+    return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|주)도서출판|출판사", "", name or "").lower()
 
 
 def normalize_stage2(name: str) -> str:
@@ -301,7 +301,7 @@ def get_kpipa_book_detail(isbn: str, api_key: str) -> tuple[dict, str | None]:
 
 
 # ============================================================
-# KPIPA 페이지 크롤링 (ISBN → 출판사명)
+# KPIPA 페이지 크롤링 (ISBN → 출판사명) 사용 X
 # ============================================================
 
 def get_publisher_name_from_isbn_kpipa(isbn: str) -> tuple[str | None, str | None, str | None]:
