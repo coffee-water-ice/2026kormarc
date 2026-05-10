@@ -227,7 +227,7 @@ def search_publisher_location_with_alias(
         addr = candidates.iloc[0]["주소"]
         debug.append(f"✅ KPIPA DB 매칭 성공: {name} → {addr}")
         return addr, debug
-    debug.append(f"❌ KPIPA DB 매칭 실패: {name}")
+    debug.append(f"❌ KPIPA DB 매칭 실패: {name} (정규화 결과: {norm})")
     return "출판지 미상", debug
 
 
