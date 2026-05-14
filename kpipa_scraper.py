@@ -11,35 +11,39 @@ import argparse
 import time
 
 import pandas as pd
+from bs4 import BeautifulSoup
 from playwright.sync_api import Page, sync_playwright
 
 _BASE_URL = "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList"
 
 
 def _extract_rows(page: Page) -> list[dict]:
-    """현재 페이지 테이블에서 출판사 데이터를 추출한다."""
-    rows = page.locator("table.srch tbody tr").all()
+    """page.content() HTML을 BeautifulSoup으로 파싱해 출판사 데이터를 추출한다."""
+    soup = BeautifulSoup(page.content(), "html.parser")
     result = []
-    for row in rows:
-        tds = row.locator("td").all()
+    for tr in soup.select("table.srch tbody tr"):
+        tds = tr.find_all("td")
         if len(tds) < 4:
             continue
-        seq_text = tds[0].inner_text().strip()
+        seq_text = tds[0].get_text(strip=True)
         if not seq_text.isdigit():
             continue
         result.append({
             "순번": int(seq_text),
-            "출판사명": tds[1].inner_text().strip(),
-            "지역": tds[2].inner_text().strip(),
-            "전화번호": tds[3].inner_text().strip(),
+            "출판사명": tds[1].get_text(strip=True),
+            "지역": tds[2].get_text(strip=True),
+            "전화번호": tds[3].get_text(strip=True),
         })
     return result
 
 
 def _get_total_pages(page: Page) -> int:
     """li.fraction 텍스트 "1 / 208" 에서 전체 페이지 수를 반환한다."""
-    text = page.locator("li.fraction").inner_text().strip()
-    return int(text.split("/")[1].strip())
+    soup = BeautifulSoup(page.content(), "html.parser")
+    fraction = soup.select_one("li.fraction")
+    if not fraction:
+        raise RuntimeError("li.fraction 없음 — 페이지 구조가 바뀌었을 수 있습니다.")
+    return int(fraction.get_text(strip=True).split("/")[1].strip())
 
 
 def _go_to_page(page: Page, page_no: int) -> None:
