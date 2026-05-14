@@ -1,0 +1,28 @@
+name: KPIPA 출판사 DB 주간 갱신
+
+on:
+  schedule:
+    - cron: '0 1 * * 1'    # 매주 월요일 01:00 UTC = 10:00 KST
+  workflow_dispatch:         # GitHub UI에서 수동 실행 버튼
+
+jobs:
+  update-publisher-db:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: pip install -r requirements-kpipa.txt
+
+      - name: Playwright 브라우저 설치
+        run: playwright install chromium --with-deps
+
+      - name: KPIPA DB 갱신 실행
+        env:
+          GSPREAD_CREDENTIALS: ${{ secrets.GSPREAD_CREDENTIALS }}
+        run: python kpipa_step3.py
