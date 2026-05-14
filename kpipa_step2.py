@@ -91,7 +91,7 @@ def main(max_pages: int | None = None) -> None:
 
     신규 = (result_df["비고"] == "신규 등록").sum()
     확인 = (result_df["비고"] == "확인필요").sum()
-    print(f"처리 완료 — 신규 등록: {신규}건 / 확인필요: {확인}건 / 전체: {len(result_df)}건")
+    print(f"처리 완료 -- 신규 등록: {신규}건 / 확인필요: {확인}건 / 전체: {len(result_df)}건")
 
     filename = f"출판사정리_리스트_{date.today().strftime('%Y%m%d')}.xlsx"
     path = base_dir / filename
