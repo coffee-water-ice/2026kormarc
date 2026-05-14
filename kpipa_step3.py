@@ -15,8 +15,11 @@ import argparse
 import json
 import os
 import time
+from datetime import datetime, timezone, timedelta
 
 import pandas as pd
+
+_KST = timezone(timedelta(hours=9))
 
 # ── kpipa_scraper import ───────────────────────────────────────────────────
 try:
@@ -125,8 +128,8 @@ _SPREADSHEET_NAME = "출판사 DB"
 
 def _df_to_values(df: pd.DataFrame) -> list[list]:
     """DataFrame → Sheets에 쓸 2D 리스트 (헤더 포함)."""
-    header = [["순번", "출판사명", "지역", "전화번호", "비고"]]
-    rows = df[["순번", "출판사명", "지역", "전화번호", "비고"]].astype(str).values.tolist()
+    header = [["순번", "출판사명", "지역", "전화번호", "비고", "갱신"]]
+    rows = df[["순번", "출판사명", "지역", "전화번호", "비고", "갱신"]].astype(str).values.tolist()
     return header + rows
 
 
@@ -145,13 +148,19 @@ def update_sheets(df: pd.DataFrame, dry_run: bool = False) -> None:
     data_rows = existing_values[1:] if len(existing_values) > 1 else []
 
     if data_rows:
-        old_df = pd.DataFrame(data_rows, columns=["순번", "출판사명", "지역", "전화번호", "비고"])
+        # 기존 시트가 5컬럼(갱신 없음)일 수도 있으므로 유연하게 처리
+        num_cols = len(data_rows[0]) if data_rows else 0
+        base_cols = ["순번", "출판사명", "지역", "전화번호", "비고"]
+        all_cols = base_cols + ["갱신"]
+        old_df = pd.DataFrame(data_rows, columns=all_cols[:num_cols])
+        if "갱신" not in old_df.columns:
+            old_df["갱신"] = ""
         old_df["순번"] = pd.to_numeric(old_df["순번"], errors="coerce").fillna(0).astype(int)
         # 기존 행의 비고가 비어있으면 "기존"으로 채워 신규 행과 구별
         old_df["비고"] = old_df["비고"].fillna("").str.strip()
         old_df.loc[old_df["비고"] == "", "비고"] = "기존"
     else:
-        old_df = pd.DataFrame(columns=["순번", "출판사명", "지역", "전화번호", "비고"])
+        old_df = pd.DataFrame(columns=["순번", "출판사명", "지역", "전화번호", "비고", "갱신"])
 
     print(f"기존 시트 데이터: {len(old_df)}건")
 
@@ -171,9 +180,12 @@ def update_sheets(df: pd.DataFrame, dry_run: bool = False) -> None:
     combined = pd.concat([old_df, df], ignore_index=True)
     result_df = process_duplicates(combined)
 
+    now_kst = datetime.now(_KST).strftime("갱신: %Y-%m-%d %H:%M")
+    result_df["갱신"] = now_kst
+
     신규 = (result_df["비고"] == "신규 등록").sum()
     확인 = (result_df["비고"] == "확인필요").sum()
-    print(f"처리 결과 — 신규: {신규}건 / 확인필요: {확인}건 / 전체: {len(result_df)}건")
+    print(f"처리 결과 -- 신규: {신규}건 / 확인필요: {확인}건 / 전체: {len(result_df)}건")
 
     if dry_run:
         print("=== DRY-RUN: 아래 결과를 Sheets에 반영하지 않습니다 ===")
@@ -197,7 +209,7 @@ def update_sheets(df: pd.DataFrame, dry_run: bool = False) -> None:
         start_row = i + 1
         end_row = i + len(chunk)
         ws_main.update(
-            range_name=f"A{start_row}:E{end_row}",
+            range_name=f"A{start_row}:F{end_row}",
             values=chunk,
             value_input_option="RAW",
         )
