@@ -1,4 +1,4 @@
-name: KPIPA 출판사 DB 주간 갱신
+name: KPIPA DB 주간 갱신
 
 on:
   schedule:
