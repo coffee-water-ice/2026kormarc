@@ -47,11 +47,21 @@ def _get_total_pages(page: Page) -> int:
 
 
 def _go_to_page(page: Page, page_no: int) -> None:
-    """fnPblshrInfoList() JS 함수 직접 호출로 AJAX 페이지 이동."""
+    """fnPblshrInfoList() JS 함수 직접 호출로 AJAX 페이지 이동.
+
+    networkidle 대신 li.fraction 텍스트가 목표 페이지 번호로 바뀌는 것을
+    확인해야 DOM 업데이트가 실제로 완료됐음을 보장할 수 있다.
+    """
     page.evaluate(f"fnPblshrInfoList({page_no})")
-    # 네트워크 요청이 끝나고 테이블이 갱신될 때까지 대기
-    page.wait_for_load_state("networkidle", timeout=15_000)
-    page.wait_for_selector("table.srch tbody tr", timeout=10_000)
+    # li.fraction이 "N / ..." 형태로 바뀔 때까지 대기 — DOM 갱신 완료 신호
+    page.wait_for_function(
+        """(n) => {
+            const el = document.querySelector('li.fraction');
+            return el && el.innerText.trim().startsWith(n + ' /');
+        }""",
+        arg=page_no,
+        timeout=15_000,
+    )
 
 
 def fetch_all(until_no: int = 1, max_pages: int | None = None) -> pd.DataFrame:
