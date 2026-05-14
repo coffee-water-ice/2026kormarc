@@ -92,7 +92,7 @@ def process_duplicates(combined: pd.DataFrame) -> pd.DataFrame:
     combined["_is_new"] = combined["비고"].str.strip() == ""
 
     result_rows: list[dict] = []
-    for (_,), group in combined.groupby(["출판사명"], sort=False):
+    for (_, _), group in combined.groupby(["출판사명", "지역"], sort=False):
         old_rows = group[~group["_is_new"]]
         new_rows = group[group["_is_new"]]
 
@@ -103,10 +103,8 @@ def process_duplicates(combined: pd.DataFrame) -> pd.DataFrame:
             for _, r in old_rows.iterrows():
                 row = r.to_dict(); row["비고"] = "확인필요"; result_rows.append(row)
         else:
-            old_region = old_rows.iloc[0]["지역"]
-            new_region = new_rows.iloc[0]["지역"]
             row = new_rows.iloc[0].to_dict()
-            row["비고"] = "유지" if old_region == new_region else f"'{old_region}'에서 변경"
+            row["비고"] = "유지"
             result_rows.append(row)
 
     result = pd.DataFrame(result_rows)

@@ -31,7 +31,9 @@ def process_duplicates(combined: pd.DataFrame) -> pd.DataFrame:
 
     result_rows: list[dict] = []
 
-    for (pub_name,), group in combined.groupby(["출판사명"], sort=False):
+    # 출판사명 + 지역 조합을 고유 식별자로 사용
+    # 동명이지만 지역이 다른 출판사는 서로 다른 법인이므로 별개로 처리
+    for (_, _), group in combined.groupby(["출판사명", "지역"], sort=False):
         old_rows = group[~group["_is_new"]]
         new_rows = group[group["_is_new"]]
 
@@ -50,20 +52,10 @@ def process_duplicates(combined: pd.DataFrame) -> pd.DataFrame:
                 result_rows.append(row)
 
         else:
-            # 양쪽 모두 존재 — 지역 변경 여부 확인
-            old_region = old_rows.iloc[0]["지역"]
-            new_region = new_rows.iloc[0]["지역"]
-
-            if old_region == new_region:
-                # 지역 동일 → 중복 삭제, 하나만 유지
-                row = new_rows.iloc[0].to_dict()
-                row["비고"] = "유지"
-                result_rows.append(row)
-            else:
-                # 지역 변경 → 신규 유지
-                row = new_rows.iloc[0].to_dict()
-                row["비고"] = f"'{old_region}'에서 변경"
-                result_rows.append(row)
+            # 출판사명 + 지역 모두 일치 → 동일 출판사, 중복 제거 후 유지
+            row = new_rows.iloc[0].to_dict()
+            row["비고"] = "유지"
+            result_rows.append(row)
 
     result = pd.DataFrame(result_rows)
     if result.empty:
