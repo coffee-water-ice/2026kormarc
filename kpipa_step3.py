@@ -147,6 +147,9 @@ def update_sheets(df: pd.DataFrame, dry_run: bool = False) -> None:
     if data_rows:
         old_df = pd.DataFrame(data_rows, columns=["순번", "출판사명", "지역", "전화번호", "비고"])
         old_df["순번"] = pd.to_numeric(old_df["순번"], errors="coerce").fillna(0).astype(int)
+        # 기존 행의 비고가 비어있으면 "기존"으로 채워 신규 행과 구별
+        old_df["비고"] = old_df["비고"].fillna("").str.strip()
+        old_df.loc[old_df["비고"] == "", "비고"] = "기존"
     else:
         old_df = pd.DataFrame(columns=["순번", "출판사명", "지역", "전화번호", "비고"])
 
@@ -160,7 +163,7 @@ def update_sheets(df: pd.DataFrame, dry_run: bool = False) -> None:
             ws_backup = sh.add_worksheet(_BACKUP_SHEET_NAME, rows=len(existing_values) + 10, cols=10)
 
         ws_backup.clear()
-        ws_backup.update(existing_values, value_input_option="RAW")
+        ws_backup.update(values=existing_values, value_input_option="RAW")
         print(f"백업 완료: '{_BACKUP_SHEET_NAME}'")
 
     # ── 중복 처리 ─────────────────────────────────────────────────────────
@@ -181,6 +184,12 @@ def update_sheets(df: pd.DataFrame, dry_run: bool = False) -> None:
     values = _df_to_values(result_df)
     ws_main.clear()
 
+    # 필요한 행 수보다 시트가 작으면 미리 확장
+    needed_rows = len(values) + 50
+    if ws_main.row_count < needed_rows:
+        ws_main.resize(rows=needed_rows)
+        print(f"시트 행 수 확장: {needed_rows}행")
+
     # 1,000행 이상이면 500행씩 나눠서 업데이트 (API 할당량 대응)
     chunk_size = 500
     for i in range(0, len(values), chunk_size):
@@ -188,8 +197,8 @@ def update_sheets(df: pd.DataFrame, dry_run: bool = False) -> None:
         start_row = i + 1
         end_row = i + len(chunk)
         ws_main.update(
-            f"A{start_row}:E{end_row}",
-            chunk,
+            range_name=f"A{start_row}:E{end_row}",
+            values=chunk,
             value_input_option="RAW",
         )
         if i + chunk_size < len(values):
