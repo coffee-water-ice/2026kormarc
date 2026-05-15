@@ -2,16 +2,127 @@ name: KPIPA DB 주간 갱신
 
 on:
   schedule:
-    - cron: '0 1 * * 0'    # 매주 일요일 01:00 UTC = 10:00 KST
-  workflow_dispatch:       # GitHub UI에서 수동 실행 가능
+    - cron: '0 1 * * 0'    # 매주 일요일 10:00 KST
+  workflow_dispatch:
     inputs:
+      mode:
+        description: '실행 모드'
+        required: true
+        type: choice
+        default: 'DB 갱신'
+        options:
+          - 'DB 갱신'
+          - '스케줄 변경'
+      day:
+        description: '실행 요일 (스케줄 변경 모드)'
+        required: false
+        type: choice
+        default: '매주 일요일'
+        options:
+          - '매주 월요일'
+          - '매주 화요일'
+          - '매주 수요일'
+          - '매주 목요일'
+          - '매주 금요일'
+          - '매주 토요일'
+          - '매주 일요일'
+          - '매일'
+          - '매월 1일'
+      hour_kst:
+        description: '실행 시각 KST (24시간제, 0=자정 12=정오)'
+        required: false
+        type: choice
+        default: '10'
+        options:
+          - '0'
+          - '1'
+          - '2'
+          - '3'
+          - '4'
+          - '5'
+          - '6'
+          - '7'
+          - '8'
+          - '9'
+          - '10'
+          - '11'
+          - '12'
+          - '13'
+          - '14'
+          - '15'
+          - '16'
+          - '17'
+          - '18'
+          - '19'
+          - '20'
+          - '21'
+          - '22'
+          - '23'
       reason:
-        description: '실행 이유를 입력해주세요 (예: 수동 데이터 갱신)'
+        description: '실행 이유 (DB 갱신 모드)'
         required: false
         default: '정기 스케줄 외 수동 실행'
 
+permissions:
+  contents: write
+
 jobs:
+  change-schedule:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == '스케줄 변경'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: 스케줄 변경 및 커밋
+        run: |
+          KST_HOUR=${{ github.event.inputs.hour_kst }}
+          UTC_HOUR=$((KST_HOUR - 9))
+
+          # KST가 09시 미만이면 UTC는 전날 → DOW를 하루 앞으로 당김
+          if [ $UTC_HOUR -lt 0 ]; then
+            UTC_HOUR=$((UTC_HOUR + 24))
+            ROLLBACK=1
+          else
+            ROLLBACK=0
+          fi
+
+          # KST 요일 → DOW 번호 (0=일, 1=월 ... 6=토)
+          case "${{ github.event.inputs.day }}" in
+            "매주 월요일") KST_DOW=1 ;;
+            "매주 화요일") KST_DOW=2 ;;
+            "매주 수요일") KST_DOW=3 ;;
+            "매주 목요일") KST_DOW=4 ;;
+            "매주 금요일") KST_DOW=5 ;;
+            "매주 토요일") KST_DOW=6 ;;
+            "매주 일요일") KST_DOW=0 ;;
+            *)             KST_DOW=0 ;;
+          esac
+
+          # DOW 롤백 (KST 09시 미만이면 UTC는 전날)
+          if [ $ROLLBACK -eq 1 ]; then
+            UTC_DOW=$(( (KST_DOW - 1 + 7) % 7 ))
+          else
+            UTC_DOW=$KST_DOW
+          fi
+
+          # cron 식 생성
+          case "${{ github.event.inputs.day }}" in
+            "매일")     CRON="0 $UTC_HOUR * * *" ;;
+            "매월 1일") CRON="0 $UTC_HOUR 1 * *" ;;
+            *)          CRON="0 $UTC_HOUR * * $UTC_DOW" ;;
+          esac
+
+          LABEL="${{ github.event.inputs.day }} ${{ github.event.inputs.hour_kst }}:00 KST"
+          sed -i "s|    - cron: '.*'.*|    - cron: '$CRON'    # $LABEL|" .github/workflows/kpipa_weekly.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/kpipa_weekly.yml
+          git diff --staged --quiet || git commit -m "Update: 실행 주기를 '$LABEL'으로 변경"
+          git push
+
   update-publisher-db:
+    if: github.event_name == 'schedule' || github.event.inputs.mode == 'DB 갱신'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -28,9 +139,7 @@ jobs:
         run: playwright install chromium --with-deps
 
       - name: 트리거 정보 확인
-        run: |
-          echo "작업이 트리거되었습니다."
-          echo "트리거 사유: ${{ github.event.inputs.reason || '스케줄 실행' }}"
+        run: echo "트리거 사유 - ${{ github.event.inputs.reason || '스케줄 실행' }}"
 
       - name: KPIPA DB 갱신 실행
         env:
