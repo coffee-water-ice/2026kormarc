@@ -2,8 +2,13 @@ name: KPIPA DB 주간 갱신
 
 on:
   schedule:
-    - cron: '0 1 * * 1'    # 매주 월요일 01:00 UTC = 10:00 KST
-  workflow_dispatch:         # GitHub UI에서 수동 실행 버튼
+    - cron: '0 1 * * 0'    # 매주 일요일 01:00 UTC = 10:00 KST
+  workflow_dispatch:       # GitHub UI에서 수동 실행 가능
+    inputs:
+      reason:
+        description: '실행 이유를 입력해주세요 (예: 수동 데이터 갱신)'
+        required: false
+        default: '정기 스케줄 외 수동 실행'
 
 jobs:
   update-publisher-db:
@@ -17,12 +22,17 @@ jobs:
           python-version: '3.11'
 
       - name: 의존성 설치
-        run: pip install -r requirements-kpipa.txt
+        run: pip install -r kpipa_steps/requirements-kpipa.txt
 
       - name: Playwright 브라우저 설치
         run: playwright install chromium --with-deps
 
+      - name: 트리거 정보 확인
+        run: |
+          echo "작업이 트리거되었습니다."
+          echo "트리거 사유: ${{ github.event.inputs.reason || '스케줄 실행' }}"
+
       - name: KPIPA DB 갱신 실행
         env:
           GSPREAD_CREDENTIALS: ${{ secrets.GSPREAD_CREDENTIALS }}
-        run: python kpipa_step3.py
+        run: python kpipa_steps/kpipa_step3.py
