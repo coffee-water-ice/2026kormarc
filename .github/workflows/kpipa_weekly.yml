@@ -72,6 +72,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: 스케줄 변경 및 커밋
         run: |
