@@ -28,6 +28,18 @@ my project/
 ├── database/
 │   └── feedback_logger.py  # 사서 피드백 SQLite 저장
 │
+├── kpipa_steps/            # KPIPA 출판사 DB 구축 스크립트 모음
+│   ├── kpipa_scraper.py        # KPIPA 크롤링 공통 모듈 (Playwright)
+│   ├── kpipa_step1.py          # 전체 수집 → Excel 저장
+│   ├── kpipa_step2.py          # 기존 Excel 갱신 + 중복 처리
+│   ├── kpipa_step3.py          # Google Sheets 갱신 (GitHub Actions 진입점)
+│   ├── requirements-kpipa.txt  # KPIPA 전용 의존성 (-r ../requirements.txt 포함)
+│   ├── KPIPA_DB_GUIDE.md       # DB 구축 지시서
+│   └── KPIPA_자동화_가이드.md   # 자동화 운영 가이드
+│
+├── .github/workflows/
+│   └── kpipa_weekly.yml    # KPIPA DB 주간 자동 갱신 GitHub Actions
+│
 ├── feedback.db             # SQLite 피드백 데이터베이스
 ├── requirements.txt        # Python 의존성
 └── .streamlit/
@@ -378,3 +390,45 @@ streamlit run streamlit_app.py
 | openai | (선택) 940 필드 AI 생성 |
 | python-dotenv | 환경변수 로드 |
 | pandas | 데이터 처리 |
+| playwright | KPIPA 크롤링 (kpipa_steps/ 전용) |
+| openpyxl | Excel 파일 읽기/쓰기 (kpipa_steps/ 전용) |
+
+---
+
+## GitHub Actions — KPIPA DB 주간 갱신
+
+**파일**: `.github/workflows/kpipa_weekly.yml`
+
+### 동작 모드
+
+GitHub UI → Actions → **KPIPA DB 주간 갱신** → **Run workflow** 에서 선택:
+
+| 모드 | 동작 |
+|---|---|
+| `DB 갱신` | `kpipa_steps/kpipa_step3.py` 실행 → Google Sheets 갱신 |
+| `스케줄 변경` | 선택한 요일·시각으로 cron 수정 후 self-commit |
+
+### 스케줄 변경 입력값
+
+| 입력 | 설명 |
+|---|---|
+| `day` | 매주 월~일 / 매일 / 매월 1일 |
+| `hour_kst` | 실행 시각 (KST 24시간제, 0~23) |
+
+- KST → UTC 자동 변환 (`UTC = KST - 9`)
+- KST 09시 미만이면 UTC는 전날 → 요일(DOW) 자동 롤백 처리
+- 변경된 cron을 workflow 파일에 직접 커밋 (self-commit)
+
+### 필요한 GitHub Secrets
+
+| Secret | 용도 |
+|---|---|
+| `GSPREAD_CREDENTIALS` | Google 서비스 계정 JSON (DB 갱신용) |
+| `PAT_TOKEN` | Personal Access Token — `contents` + `workflows` 권한 필요 (self-commit용) |
+
+### Jobs
+
+| Job | 실행 조건 |
+|---|---|
+| `change-schedule` | `workflow_dispatch` + mode=스케줄 변경 |
+| `update-publisher-db` | `schedule` 자동 실행 또는 mode=DB 갱신 |
