@@ -23,7 +23,8 @@ import requests
 from bs4 import BeautifulSoup
 
 # 전역 캐시 변수 (매 요청마다 구글 시트를 다시 읽지 않도록 방지)
-_PUBLISHER_DB_CACHE: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None
+# isbn_prefix_dict: {isbn_prefix(str) → 발행지(str)} — iterrows 대신 O(1) dict 조회용
+_PUBLISHER_DB_CACHE: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, str]] | None = None
 
 
 # ============================================================
@@ -135,11 +136,11 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
                  secrets["gspread"] 에 서비스 계정 JSON 키가 있어야 한다.
 
     Returns:
-        (publisher_data, region_data, imprint_data, isbn_location_data)
-        - publisher_data:      columns=["출판사명", "주소"]
-        - region_data:         columns=["발행국", "발행국 부호"]
-        - imprint_data:        columns=["임프린트"]
-        - isbn_location_data:  columns=["isbn_prefix", "발행지"]
+        (publisher_data, region_data, imprint_data, isbn_prefix_dict)
+        - publisher_data:    columns=["출판사명", "주소"]
+        - region_data:       columns=["발행국", "발행국 부호"]
+        - imprint_data:      columns=["임프린트"]
+        - isbn_prefix_dict:  {isbn_prefix → 발행지} — O(1) 조회용 dict
     """
     global _PUBLISHER_DB_CACHE
     if _PUBLISHER_DB_CACHE is not None:
@@ -202,9 +203,10 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
     # "ISBN발행자번호-발행지 연결표" 시트 로드
     # 행 구조: [No, 발행자명, isbn_prefix_1, ..., isbn_prefix_9, 발행지]  (12열)
     # → col[0]=No, col[1]=발행자명, col[2..10]=ISBN 접두부, col[11]=발행지
-    # 숫자 접두부 컬럼을 모두 추출해 isbn_prefix → 발행지 매핑으로 평탄화한다.
+    # dict {prefix: 발행지} 로 빌드 — 검색 시 O(1) 조회를 위해 DataFrame 대신 사용
+    # 동일 접두부가 여러 발행지를 가질 경우 첫 번째 값 유지 (선입 우선)
     isbn_loc_rows = sh.worksheet("ISBN발행자번호-발행지 연결표").get_all_values()[1:]
-    isbn_loc_records: list[dict] = []
+    isbn_prefix_dict: dict[str, str] = {}
     for row in isbn_loc_rows:
         if not row:
             continue
@@ -213,11 +215,10 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
             continue
         for cell in row[2:-1]:  # No(0)·발행자명(1) 제외, 발행지(-1) 제외
             prefix = re.sub(r"\D", "", str(cell))
-            if 5 <= len(prefix) <= 13:  # gspread 반환 기준: 실제 6~11자리
-                isbn_loc_records.append({"isbn_prefix": prefix, "발행지": location})
-    isbn_location_data = pd.DataFrame(isbn_loc_records, columns=["isbn_prefix", "발행지"])
+            if 5 <= len(prefix) <= 13 and prefix not in isbn_prefix_dict:
+                isbn_prefix_dict[prefix] = location
 
-    result = (publisher_data, region_data, imprint_data, isbn_location_data)
+    result = (publisher_data, region_data, imprint_data, isbn_prefix_dict)
     _PUBLISHER_DB_CACHE = result
     return _PUBLISHER_DB_CACHE
 
@@ -227,18 +228,17 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
 # ============================================================
 
 def search_location_by_isbn_prefix(
-    isbn: str, isbn_location_data: pd.DataFrame
+    isbn: str, isbn_prefix_dict: dict[str, str]
 ) -> tuple[str, list[str]]:
     """
-    'ISBN발행자번호-발행지 연결표'에서 ISBN 접두부 매칭으로 발행지를 찾는다.
+    'ISBN발행자번호-발행지 연결표' dict에서 ISBN 접두부 매칭으로 발행지를 찾는다.
 
-    시트의 각 항목은 '접두부+국별번호+발행자번호'까지의 부분 ISBN이므로,
-    13자리 전체 ISBN이 해당 접두부로 시작하는지 비교한다.
-    여러 항목이 매칭될 경우 가장 긴 접두부(= 더 구체적인 발행자)를 우선한다.
+    긴 접두부(더 구체적)부터 짧은 접두부 순으로 dict 키를 조회하므로
+    최장 매칭이 우선된다. 검색 비용은 O(접두부 길이 범위) = O(9).
 
     Args:
-        isbn:              13자리 ISBN (하이픈 포함/미포함 모두 처리)
-        isbn_location_data: columns=["isbn_prefix", "발행지"]
+        isbn:             13자리 ISBN (하이픈 포함/미포함 모두 처리)
+        isbn_prefix_dict: {isbn_prefix → 발행지}
 
     Returns:
         (발행지 또는 "출판지 미상", 디버그 메시지 목록)
@@ -249,23 +249,16 @@ def search_location_by_isbn_prefix(
     if len(isbn_clean) != 13:
         return "출판지 미상", [f"❌ ISBN 접두부 검색 불가: 13자리 아님 ({isbn_clean})"]
 
-    if isbn_location_data.empty:
+    if not isbn_prefix_dict:
         return "출판지 미상", ["❌ ISBN발행자번호-발행지 연결표가 비어 있음"]
 
-    best_location: str | None = None
-    best_len = 0
-
-    for _, row in isbn_location_data.iterrows():
-        prefix = str(row["isbn_prefix"])
-        if isbn_clean.startswith(prefix) and len(prefix) > best_len:
-            best_location = str(row["발행지"])
-            best_len = len(prefix)
-
-    if best_location:
-        debug.append(
-            f"✅ ISBN 접두부 매칭 성공: {isbn_clean[:best_len]}… → {best_location}"
-        )
-        return best_location, debug
+    # 길이 13→5 순으로 줄여가며 dict 조회 — 첫 번째 히트가 최장 매칭
+    for length in range(13, 4, -1):
+        prefix = isbn_clean[:length]
+        if prefix in isbn_prefix_dict:
+            location = isbn_prefix_dict[prefix]
+            debug.append(f"✅ ISBN 접두부 매칭 성공: {prefix}… → {location}")
+            return location, debug
 
     debug.append(f"❌ ISBN 접두부 매칭 실패: {isbn_clean}")
     return "출판지 미상", debug
@@ -541,7 +534,7 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
     _UNKNOWN = ("출판지 미상", "예외 발생", "미확인", "오류 발생", None)
 
     try:
-        publisher_data, region_data, imprint_data, isbn_location_data = load_publisher_db(secrets)
+        publisher_data, region_data, imprint_data, isbn_prefix_dict = load_publisher_db(secrets)
         debug.append("✓ 구글시트 DB 적재 성공")
 
         place_raw: str | None = None
@@ -549,7 +542,7 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
         resolved = (publisher_name_raw or "").strip()
 
         # 0) ISBN 접두부 직접 조회 (최우선)
-        place_raw, isbn_msgs = search_location_by_isbn_prefix(isbn, isbn_location_data)
+        place_raw, isbn_msgs = search_location_by_isbn_prefix(isbn, isbn_prefix_dict)
         debug += isbn_msgs
         if place_raw not in _UNKNOWN:
             source = "ISBN_PREFIX_DB"
