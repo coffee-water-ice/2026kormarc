@@ -23,7 +23,7 @@ import requests
 from bs4 import BeautifulSoup
 
 # 전역 캐시 변수 (매 요청마다 구글 시트를 다시 읽지 않도록 방지)
-_PUBLISHER_DB_CACHE: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None
+_PUBLISHER_DB_CACHE: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None
 
 
 # ============================================================
@@ -126,19 +126,20 @@ def normalize_publisher_location_for_display(location_name: str) -> str:
 # Google Sheets 기반 출판사 DB
 # ============================================================
 
-def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Google Sheets '출판사 DB' 스프레드시트에서 세 가지 데이터프레임을 로드한다.
+    Google Sheets '출판사 DB' 스프레드시트에서 네 가지 데이터프레임을 로드한다.
 
     Args:
         secrets: Streamlit secrets dict (또는 동등한 dict).
                  secrets["gspread"] 에 서비스 계정 JSON 키가 있어야 한다.
 
     Returns:
-        (publisher_data, region_data, imprint_data)
-        - publisher_data: columns=["출판사명", "주소"]
-        - region_data:    columns=["발행국", "발행국 부호"]
-        - imprint_data:   columns=["임프린트"]
+        (publisher_data, region_data, imprint_data, isbn_location_data)
+        - publisher_data:      columns=["출판사명", "주소"]
+        - region_data:         columns=["발행국", "발행국 부호"]
+        - imprint_data:        columns=["임프린트"]
+        - isbn_location_data:  columns=["isbn_prefix", "발행지"]
     """
     global _PUBLISHER_DB_CACHE
     if _PUBLISHER_DB_CACHE is not None:
@@ -198,7 +199,25 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
             imprint_frames.extend(row[0] for row in ws.get_all_values()[1:] if row)
     imprint_data = pd.DataFrame(imprint_frames, columns=["임프린트"])
 
-    result = (publisher_data, region_data, imprint_data)
+    # "ISBN발행자번호-발행지 연결표" 시트 로드
+    # 행 구조: [No, 발행자명, isbn_prefix_1, ..., isbn_prefix_9, 발행지]  (12열)
+    # → col[0]=No, col[1]=발행자명, col[2..10]=ISBN 접두부, col[11]=발행지
+    # 숫자 접두부 컬럼을 모두 추출해 isbn_prefix → 발행지 매핑으로 평탄화한다.
+    isbn_loc_rows = sh.worksheet("ISBN발행자번호-발행지 연결표").get_all_values()[1:]
+    isbn_loc_records: list[dict] = []
+    for row in isbn_loc_rows:
+        if not row:
+            continue
+        location = row[-1].strip() if row else ""
+        if not location:
+            continue
+        for cell in row[2:-1]:  # No(0)·발행자명(1) 제외, 발행지(-1) 제외
+            prefix = re.sub(r"\D", "", str(cell))
+            if 5 <= len(prefix) <= 13:  # gspread 반환 기준: 실제 6~11자리
+                isbn_loc_records.append({"isbn_prefix": prefix, "발행지": location})
+    isbn_location_data = pd.DataFrame(isbn_loc_records, columns=["isbn_prefix", "발행지"])
+
+    result = (publisher_data, region_data, imprint_data, isbn_location_data)
     _PUBLISHER_DB_CACHE = result
     return _PUBLISHER_DB_CACHE
 
@@ -206,6 +225,51 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
 # ============================================================
 # 출판사 위치 검색
 # ============================================================
+
+def search_location_by_isbn_prefix(
+    isbn: str, isbn_location_data: pd.DataFrame
+) -> tuple[str, list[str]]:
+    """
+    'ISBN발행자번호-발행지 연결표'에서 ISBN 접두부 매칭으로 발행지를 찾는다.
+
+    시트의 각 항목은 '접두부+국별번호+발행자번호'까지의 부분 ISBN이므로,
+    13자리 전체 ISBN이 해당 접두부로 시작하는지 비교한다.
+    여러 항목이 매칭될 경우 가장 긴 접두부(= 더 구체적인 발행자)를 우선한다.
+
+    Args:
+        isbn:              13자리 ISBN (하이픈 포함/미포함 모두 처리)
+        isbn_location_data: columns=["isbn_prefix", "발행지"]
+
+    Returns:
+        (발행지 또는 "출판지 미상", 디버그 메시지 목록)
+    """
+    debug: list[str] = []
+    isbn_clean = re.sub(r"\D", "", isbn or "")
+
+    if len(isbn_clean) != 13:
+        return "출판지 미상", [f"❌ ISBN 접두부 검색 불가: 13자리 아님 ({isbn_clean})"]
+
+    if isbn_location_data.empty:
+        return "출판지 미상", ["❌ ISBN발행자번호-발행지 연결표가 비어 있음"]
+
+    best_location: str | None = None
+    best_len = 0
+
+    for _, row in isbn_location_data.iterrows():
+        prefix = str(row["isbn_prefix"])
+        if isbn_clean.startswith(prefix) and len(prefix) > best_len:
+            best_location = str(row["발행지"])
+            best_len = len(prefix)
+
+    if best_location:
+        debug.append(
+            f"✅ ISBN 접두부 매칭 성공: {isbn_clean[:best_len]}… → {best_location}"
+        )
+        return best_location, debug
+
+    debug.append(f"❌ ISBN 접두부 매칭 실패: {isbn_clean}")
+    return "출판지 미상", debug
+
 
 def search_publisher_location_with_alias(
     name: str, publisher_data: pd.DataFrame
@@ -454,8 +518,9 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
     260/008 필드 생성에 필요한 정보를 dict로 묶어 반환한다.
 
     탐색 순서:
-      [API 조회 성공 시] KPIPA API(PublisherName) → Google Sheets DB → 문체부
-      [API 조회 실패 시] 알라딘 출판사명 → Google Sheets DB → 임프린트 DB → 문체부
+      0순위: ISBN 접두부 직접 조회 (ISBN발행자번호-발행지 연결표)
+      [0순위 실패, API 조회 성공 시] KPIPA API(PublisherName) → Google Sheets DB → 문체부
+      [0순위 실패, API 조회 실패 시] 알라딘 출판사명 → Google Sheets DB → 임프린트 DB → 문체부
 
     Args:
         isbn:               ISBN-13
@@ -476,81 +541,88 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
     _UNKNOWN = ("출판지 미상", "예외 발생", "미확인", "오류 발생", None)
 
     try:
-        publisher_data, region_data, imprint_data = load_publisher_db(secrets)
+        publisher_data, region_data, imprint_data, isbn_location_data = load_publisher_db(secrets)
         debug.append("✓ 구글시트 DB 적재 성공")
 
         place_raw: str | None = None
         source = "FALLBACK"
         resolved = (publisher_name_raw or "").strip()
 
-        # 1) KPIPA 공식 API 조회
-        api_key = (secrets or {}).get("KPIPA_API_KEY", "")
-        kpipa_api_data, kpipa_api_err = get_kpipa_book_detail(isbn, api_key)
+        # 0) ISBN 접두부 직접 조회 (최우선)
+        place_raw, isbn_msgs = search_location_by_isbn_prefix(isbn, isbn_location_data)
+        debug += isbn_msgs
+        if place_raw not in _UNKNOWN:
+            source = "ISBN_PREFIX_DB"
 
-        if kpipa_api_err:
-            debug.append(f"KPIPA API 오류: {kpipa_api_err}")
-            kpipa_api_publisher = None
-        else:
-            result_code = (
-                (kpipa_api_data.get("response") or {})
-                .get("result", {})
-                .get("resultCode", "?")
-            )
-            kpipa_api_publisher = _extract_kpipa_publisher_name(kpipa_api_data)
-            if kpipa_api_publisher:
-                debug.append(
-                    f"✓ KPIPA API 성공 (resultCode={result_code}, 출판사: {kpipa_api_publisher})"
-                )
+        if place_raw in _UNKNOWN:
+            # 1) KPIPA 공식 API 조회
+            api_key = (secrets or {}).get("KPIPA_API_KEY", "")
+            kpipa_api_data, kpipa_api_err = get_kpipa_book_detail(isbn, api_key)
+
+            if kpipa_api_err:
+                debug.append(f"KPIPA API 오류: {kpipa_api_err}")
+                kpipa_api_publisher = None
             else:
-                debug.append(
-                    f"KPIPA API 응답 있음 (resultCode={result_code}) → PublisherName 없음"
+                result_code = (
+                    (kpipa_api_data.get("response") or {})
+                    .get("result", {})
+                    .get("resultCode", "?")
                 )
+                kpipa_api_publisher = _extract_kpipa_publisher_name(kpipa_api_data)
+                if kpipa_api_publisher:
+                    debug.append(
+                        f"✓ KPIPA API 성공 (resultCode={result_code}, 출판사: {kpipa_api_publisher})"
+                    )
+                else:
+                    debug.append(
+                        f"KPIPA API 응답 있음 (resultCode={result_code}) → PublisherName 없음"
+                    )
 
-        if kpipa_api_publisher:
-            # ── API 성공 경로 ──────────────────────────────────
-            rep_name, aliases = split_publisher_aliases(kpipa_api_publisher)
-            resolved = rep_name or kpipa_api_publisher
-            debug.append(f"[API경로] 대표 출판사명: {resolved} | ALIAS: {aliases}")
+            if kpipa_api_publisher:
+                # ── API 성공 경로 ──────────────────────────────────
+                rep_name, aliases = split_publisher_aliases(kpipa_api_publisher)
+                resolved = rep_name or kpipa_api_publisher
+                debug.append(f"[API경로] 대표 출판사명: {resolved} | ALIAS: {aliases}")
 
-            # 2a) Google Sheets DB 검색
-            place_raw, msgs = search_publisher_location_with_alias(resolved, publisher_data)
-            debug += msgs
-            source = "KPIPA_API→DB"
-
-            # 2b) 문체부 검색 (Google Sheets 실패 시)
-            if place_raw in _UNKNOWN:
-                mcst_addr, _, mcst_dbg = get_mcst_address(resolved)
-                debug += mcst_dbg
-                if mcst_addr not in ("미확인", "오류 발생", None):
-                    place_raw, source = mcst_addr, "KPIPA_API→MCST"
-
-        else:
-            # ── API 실패 경로 (알라딘 출판사명 사용) ──────────
-            debug.append("KPIPA API 미조회 → 알라딘 출판사명으로 전환")
-            rep_name, aliases = split_publisher_aliases(publisher_name_raw or "")
-            resolved = rep_name or (publisher_name_raw or "").strip()
-            debug.append(f"[알라딘경로] 대표 출판사명: {resolved} | ALIAS: {aliases}")
-
-            # 2) Google Sheets DB 검색
-            place_raw, msgs = search_publisher_location_with_alias(resolved, publisher_data)
-            debug += msgs
-            source = "ALADIN→DB"
-
-            # 3) 임프린트 DB 검색
-            if place_raw in _UNKNOWN:
-                place_raw, msgs = find_main_publisher_from_imprints(
-                    resolved, imprint_data, publisher_data
-                )
+                # 2a) Google Sheets DB 검색
+                place_raw, msgs = search_publisher_location_with_alias(resolved, publisher_data)
                 debug += msgs
-                if place_raw:
-                    source = "ALADIN→IMPRINT→DB"
+                source = "KPIPA_API→DB"
 
-            # 4) 문체부 검색
-            if not place_raw or place_raw in _UNKNOWN:
-                mcst_addr, _, mcst_dbg = get_mcst_address(resolved)
-                debug += mcst_dbg
-                if mcst_addr not in ("미확인", "오류 발생", None):
-                    place_raw, source = mcst_addr, "ALADIN→MCST"
+                # 2b) 문체부 검색 (Google Sheets 실패 시)
+                if place_raw in _UNKNOWN:
+                    mcst_addr, _, mcst_dbg = get_mcst_address(resolved)
+                    debug += mcst_dbg
+                    if mcst_addr not in ("미확인", "오류 발생", None):
+                        place_raw, source = mcst_addr, "KPIPA_API→MCST"
+
+            else:
+                # ── API 실패 경로 (알라딘 출판사명 사용) ──────────
+                debug.append("KPIPA API 미조회 → 알라딘 출판사명으로 전환")
+                rep_name, aliases = split_publisher_aliases(publisher_name_raw or "")
+                resolved = rep_name or (publisher_name_raw or "").strip()
+                debug.append(f"[알라딘경로] 대표 출판사명: {resolved} | ALIAS: {aliases}")
+
+                # 2) Google Sheets DB 검색
+                place_raw, msgs = search_publisher_location_with_alias(resolved, publisher_data)
+                debug += msgs
+                source = "ALADIN→DB"
+
+                # 3) 임프린트 DB 검색
+                if place_raw in _UNKNOWN:
+                    place_raw, msgs = find_main_publisher_from_imprints(
+                        resolved, imprint_data, publisher_data
+                    )
+                    debug += msgs
+                    if place_raw:
+                        source = "ALADIN→IMPRINT→DB"
+
+                # 4) 문체부 검색
+                if not place_raw or place_raw in _UNKNOWN:
+                    mcst_addr, _, mcst_dbg = get_mcst_address(resolved)
+                    debug += mcst_dbg
+                    if mcst_addr not in ("미확인", "오류 발생", None):
+                        place_raw, source = mcst_addr, "ALADIN→MCST"
 
         # 최종 fallback
         if not place_raw or place_raw in _UNKNOWN:

@@ -24,8 +24,23 @@ if st.button("변환 실행", type="primary"):
             st.success("변환 완료")
             st.subheader("MRK 텍스트")
             st.code(result.get("mrk_text", ""), language="text")
+
+            meta = result.get("meta", {})
+            source = meta.get("bundle_source", "")
+            _SOURCE_LABEL = {
+                "ISBN_PREFIX_DB":    "📖 ISBN발행자번호-발행지 연결표",
+                "KPIPA_API→DB":      "🔗 KPIPA API → 발행처명-주소 연결표",
+                "KPIPA_API→MCST":    "🔗 KPIPA API → 문체부",
+                "ALADIN→DB":         "📚 알라딘 → 발행처명-주소 연결표",
+                "ALADIN→IMPRINT→DB": "📚 알라딘 → 임프린트 → 발행처명-주소 연결표",
+                "ALADIN→MCST":       "📚 알라딘 → 문체부",
+                "FALLBACK":          "⚠️ 모든 경로 실패 (출판지 미상)",
+            }
+            label = _SOURCE_LABEL.get(source, source or "알 수 없음")
+            st.caption(f"발행지 출처: **{label}**")
+
             st.subheader("메타 정보")
-            st.json(result.get("meta", {}))
+            st.json(meta)
 
         st.divider()
         st.subheader("KPIPA API 조회 결과")
