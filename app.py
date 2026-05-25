@@ -137,7 +137,7 @@ def _load_runtime_secrets() -> dict:
         data = loaded if isinstance(loaded, dict) else {}
 
     # 2) 환경변수로 덮어쓰기 (배포 환경 우선)
-    for key in ("ALADIN_TTB_KEY", "OPENAI_API_KEY", "NLK_CERT_KEY", "KPIPA_API_KEY"):
+    for key in ("ALADIN_TTB_KEY", "OPENAI_API_KEY", "NLK_CERT_KEY", "KPIPA_API_KEY", "DATA_GO_KR"):
         env_val = os.environ.get(key)
         if env_val:
             data[key] = env_val

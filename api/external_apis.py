@@ -366,6 +366,69 @@ def get_kpipa_book_detail(isbn: str, api_key: str) -> tuple[dict, str | None]:
 
 
 # ============================================================
+# 행정안전부 출판사 조회 API (MOIS)
+# ============================================================
+
+def get_mois_publisher_address(publisher_name: str, api_key: str) -> tuple[str | None, list[str]]:
+    """
+    행정안전부 출판사 조회 API로 출판사 주소를 검색한다.
+    (문체부 웹크롤링 대체)
+
+    endpoint: https://apis.data.go.kr/1741000/publishers/info
+    cond[SALS_STTS_CD::EQ]=01 로 영업/정상 업체만 필터링한다.
+
+    Args:
+        publisher_name: 검색할 출판사명
+        api_key:        DATA_GO_KR 환경변수 값 (공공데이터포털 인증키)
+
+    Returns:
+        (도로명주소 또는 None, 디버그 메시지 목록)
+    """
+    debug: list[str] = []
+    if not api_key:
+        debug.append("[행안부] API 키(DATA_GO_KR) 없음")
+        return None, debug
+    if not publisher_name:
+        debug.append("[행안부] 검색어 없음")
+        return None, debug
+
+    url = "https://apis.data.go.kr/1741000/publishers/info"
+    params = {
+        "serviceKey": api_key,
+        "pageNo": "1",
+        "numOfRows": "10",
+        "returnType": "json",
+        "cond[SALS_STTS_CD::EQ]": "01",
+        "cond[BPLC_NM::LIKE]": publisher_name,
+    }
+
+    try:
+        res = requests.get(url, params=params, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        body = (data.get("response") or {}).get("body") or {}
+        raw_items = (body.get("items") or {}).get("item") or []
+        # 단일 결과인 경우 dict로 반환될 수 있음
+        if isinstance(raw_items, dict):
+            raw_items = [raw_items]
+        if not raw_items:
+            debug.append(f"[행안부] 검색 결과 없음: {publisher_name}")
+            return None, debug
+        addr = raw_items[0].get("ROAD_NM_ADDR") or raw_items[0].get("LOTNO_ADDR") or ""
+        if addr:
+            debug.append(f"✅ 행안부 API 매칭 성공: {publisher_name} → {addr}")
+            return addr, debug
+        debug.append(f"[행안부] 주소 필드 없음: {publisher_name}")
+        return None, debug
+    except requests.exceptions.Timeout:
+        debug.append("[행안부] 요청 시간 초과 (10s)")
+        return None, debug
+    except Exception as e:
+        debug.append(f"[행안부] 예외: {e}")
+        return None, debug
+
+
+# ============================================================
 # KPIPA 페이지 크롤링 (ISBN → 출판사명) 사용 X
 # ============================================================
 
@@ -413,7 +476,9 @@ def get_publisher_name_from_isbn_kpipa(isbn: str) -> tuple[str | None, str | Non
 
 
 # ============================================================
+# [보존용 — 행안부 API(get_mois_publisher_address)로 대체됨]
 # 문체부(MCST) 출판사 주소 검색
+# build_pub_location_bundle()에서는 더 이상 호출하지 않음.
 # ============================================================
 
 def get_mcst_address(publisher_name: str) -> tuple[str, list, list[str]]:
@@ -507,17 +572,18 @@ def _extract_kpipa_publisher_name(data: dict) -> str | None:
 
 def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict) -> dict:
     """
-    KPIPA 공식 API → Google Sheets DB → 문체부 순서로 발행지를 조회하고
-    260/008 필드 생성에 필요한 정보를 dict로 묶어 반환한다.
+    5단계 체인으로 발행지를 조회하고 260/008 필드 생성에 필요한 정보를 dict로 반환한다.
 
-    탐색 순서:
-      0순위: ISBN 접두부 직접 조회 (ISBN발행자번호-발행지 연결표)
-      [0순위 실패, API 조회 성공 시] KPIPA API(PublisherName) → Google Sheets DB → 문체부
-      [0순위 실패, API 조회 실패 시] 알라딘 출판사명 → Google Sheets DB → 임프린트 DB → 문체부
+    탐색 순서 (실패 시 다음 단계로):
+      [1] ISBN 접두부 → ISBN발행자번호-발행지 연결표
+      [2] KPIPA API 출판사명 → KPIPA DB
+      [3] 알라딘 출판사명 → KPIPA DB
+      [4] 알라딘 출판사명 → IMPRINT DB → KPIPA DB
+      [5] 알라딘 출판사명 → IMPRINT DB → 행안부 API
 
     Args:
         isbn:               ISBN-13
-        publisher_name_raw: 알라딘 API에서 받은 출판사명 원본 (API 실패 fallback용)
+        publisher_name_raw: 알라딘 API에서 받은 출판사명 원본 (steps 3-5 사용)
         secrets:            Google Sheets 인증용 secrets dict
 
     Returns:
@@ -541,81 +607,85 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
         source = "FALLBACK"
         resolved = (publisher_name_raw or "").strip()
 
-        # 0) ISBN 접두부 직접 조회 (최우선)
+        # [1] ISBN 접두부 → ISBN발행자번호-발행지 연결표
         place_raw, isbn_msgs = search_location_by_isbn_prefix(isbn, isbn_prefix_dict)
         debug += isbn_msgs
         if place_raw not in _UNKNOWN:
             source = "ISBN_PREFIX_DB"
 
+        # [2] KPIPA API 출판사명 → KPIPA DB
         if place_raw in _UNKNOWN:
-            # 1) KPIPA 공식 API 조회
-            api_key = (secrets or {}).get("KPIPA_API_KEY", "")
-            kpipa_api_data, kpipa_api_err = get_kpipa_book_detail(isbn, api_key)
-
-            if kpipa_api_err:
-                debug.append(f"KPIPA API 오류: {kpipa_api_err}")
-                kpipa_api_publisher = None
+            kpipa_api_key = (secrets or {}).get("KPIPA_API_KEY", "")
+            kpipa_data, kpipa_err = get_kpipa_book_detail(isbn, kpipa_api_key)
+            if kpipa_err:
+                debug.append(f"KPIPA API 오류: {kpipa_err}")
             else:
                 result_code = (
-                    (kpipa_api_data.get("response") or {})
+                    (kpipa_data.get("response") or {})
                     .get("result", {})
                     .get("resultCode", "?")
                 )
-                kpipa_api_publisher = _extract_kpipa_publisher_name(kpipa_api_data)
-                if kpipa_api_publisher:
+                kpipa_pub = _extract_kpipa_publisher_name(kpipa_data)
+                if kpipa_pub:
                     debug.append(
-                        f"✓ KPIPA API 성공 (resultCode={result_code}, 출판사: {kpipa_api_publisher})"
+                        f"✓ KPIPA API 성공 (resultCode={result_code}, 출판사: {kpipa_pub})"
                     )
+                    place_raw, msgs = search_publisher_location_with_alias(kpipa_pub, publisher_data)
+                    debug += msgs
+                    if place_raw not in _UNKNOWN:
+                        resolved = kpipa_pub
+                        source = "KPIPA_API→DB"
                 else:
                     debug.append(
                         f"KPIPA API 응답 있음 (resultCode={result_code}) → PublisherName 없음"
                     )
 
-            if kpipa_api_publisher:
-                # ── API 성공 경로 ──────────────────────────────────
-                rep_name, aliases = split_publisher_aliases(kpipa_api_publisher)
-                resolved = rep_name or kpipa_api_publisher
-                debug.append(f"[API경로] 대표 출판사명: {resolved} | ALIAS: {aliases}")
+        # 알라딘 출판사 대표명 분리 (steps 3-5 공통)
+        aladin_rep, _ = split_publisher_aliases(publisher_name_raw or "")
+        aladin_rep = aladin_rep or (publisher_name_raw or "").strip()
 
-                # 2a) Google Sheets DB 검색
-                place_raw, msgs = search_publisher_location_with_alias(resolved, publisher_data)
-                debug += msgs
-                source = "KPIPA_API→DB"
-
-                # 2b) 문체부 검색 (Google Sheets 실패 시)
-                if place_raw in _UNKNOWN:
-                    mcst_addr, _, mcst_dbg = get_mcst_address(resolved)
-                    debug += mcst_dbg
-                    if mcst_addr not in ("미확인", "오류 발생", None):
-                        place_raw, source = mcst_addr, "KPIPA_API→MCST"
-
-            else:
-                # ── API 실패 경로 (알라딘 출판사명 사용) ──────────
-                debug.append("KPIPA API 미조회 → 알라딘 출판사명으로 전환")
-                rep_name, aliases = split_publisher_aliases(publisher_name_raw or "")
-                resolved = rep_name or (publisher_name_raw or "").strip()
-                debug.append(f"[알라딘경로] 대표 출판사명: {resolved} | ALIAS: {aliases}")
-
-                # 2) Google Sheets DB 검색
-                place_raw, msgs = search_publisher_location_with_alias(resolved, publisher_data)
-                debug += msgs
+        # [3] 알라딘 출판사명 → KPIPA DB
+        if place_raw in _UNKNOWN:
+            debug.append(f"[알라딘경로] 대표명: {aladin_rep}")
+            place_raw, msgs = search_publisher_location_with_alias(aladin_rep, publisher_data)
+            debug += msgs
+            if place_raw not in _UNKNOWN:
+                resolved = aladin_rep
                 source = "ALADIN→DB"
 
-                # 3) 임프린트 DB 검색
-                if place_raw in _UNKNOWN:
-                    place_raw, msgs = find_main_publisher_from_imprints(
-                        resolved, imprint_data, publisher_data
-                    )
-                    debug += msgs
-                    if place_raw:
-                        source = "ALADIN→IMPRINT→DB"
+        # [4] + [5]: IMPRINT DB 조회 (한 번만 수행 후 두 단계에서 재사용)
+        if place_raw in _UNKNOWN:
+            imprint_main: str | None = None
+            norm_aladin = normalize_publisher_name(aladin_rep)
+            for full_text in imprint_data["임프린트"]:
+                if "/" in full_text:
+                    pub_p, imp_p = [p.strip() for p in full_text.split("/", 1)]
+                    if normalize_publisher_name(imp_p) == norm_aladin:
+                        imprint_main = pub_p
+                        debug.append(f"✅ IMPRINT 매칭: {aladin_rep} → {imprint_main}")
+                        break
+            if not imprint_main:
+                debug.append(f"❌ IM DB 검색 실패: 매칭되는 임프린트 없음 ({aladin_rep})")
 
-                # 4) 문체부 검색
-                if not place_raw or place_raw in _UNKNOWN:
-                    mcst_addr, _, mcst_dbg = get_mcst_address(resolved)
-                    debug += mcst_dbg
-                    if mcst_addr not in ("미확인", "오류 발생", None):
-                        place_raw, source = mcst_addr, "ALADIN→MCST"
+            # [4] IMPRINT → KPIPA DB
+            if imprint_main:
+                place_raw, msgs = search_publisher_location_with_alias(imprint_main, publisher_data)
+                debug += msgs
+                if place_raw not in _UNKNOWN:
+                    resolved = aladin_rep
+                    source = "ALADIN→IMPRINT→DB"
+
+            # [5] IMPRINT → 행안부 API
+            # imprint 매칭 성공 시 메인 출판사명으로, 실패 시 알라딘 대표명으로 검색
+            if place_raw in _UNKNOWN:
+                mois_target = imprint_main or aladin_rep
+                mois_key = (secrets or {}).get("DATA_GO_KR", "")
+                mois_addr, mois_debug = get_mois_publisher_address(mois_target, mois_key)
+                debug += mois_debug
+                if mois_addr:
+                    place_raw = mois_addr
+                    resolved = aladin_rep
+                    source = "ALADIN→IMPRINT→MOIS"
 
         # 최종 fallback
         if not place_raw or place_raw in _UNKNOWN:
