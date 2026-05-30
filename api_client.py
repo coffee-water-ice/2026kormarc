@@ -197,7 +197,8 @@ def query_nlk_isbn(isbn: str) -> dict:
                 "page_size":    10,
                 "isbn":         isbn,
             },
-            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            timeout=30,
         )
         resp.raise_for_status()
         return {"isbn": isbn, "data": resp.json(), "error": None}
