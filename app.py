@@ -117,12 +117,6 @@ class KpipaResult(BaseModel):
     error: Optional[str] = None
 
 
-class NlkResult(BaseModel):
-    isbn:  str
-    data:  dict
-    error: Optional[str] = None
-
-
 # ============================================================
 # 헬퍼
 # ============================================================
@@ -258,34 +252,6 @@ async def convert_batch(req: BatchRequest):
     return BatchResult(results=results)
 
 
-def _query_nlk_seoji(isbn: str, cert_key: str) -> tuple[dict, str | None]:
-    """국립중앙도서관 seoji API 호출. (data, error) 반환."""
-    import requests as _req
-    if not cert_key:
-        return {}, "NLK_CERT_KEY가 설정되지 않았습니다"
-    try:
-        resp = _req.get(
-            "https://www.nl.go.kr/seoji/SearchApi.do",
-            params={
-                "cert_key":     cert_key,
-                "result_style": "json",
-                "page_no":      1,
-                "page_size":    10,
-                "isbn":         isbn,
-            },
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json(), None
-    except _req.exceptions.Timeout:
-        return {}, "⏱️ NLK API 요청 시간 초과"
-    except _req.exceptions.ConnectionError:
-        return {}, "🔌 NLK API에 연결할 수 없습니다"
-    except Exception as e:
-        return {}, f"NLK API 오류: {e}"
-
-
 @app.get("/api/kpipa/{isbn}", response_model=KpipaResult, tags=["KPIPA"])
 async def kpipa_detail(isbn: str):
     """
@@ -298,16 +264,6 @@ async def kpipa_detail(isbn: str):
     clean_isbn = isbn.strip().replace("-", "")
     data, err = get_kpipa_book_detail(clean_isbn, api_key)
     return KpipaResult(isbn=clean_isbn, data=data, error=err)
-
-
-@app.get("/api/nlk/{isbn}", response_model=NlkResult, tags=["NLK"])
-async def nlk_isbn(isbn: str):
-    """국립중앙도서관 seoji ISBN 서지정보를 조회한다."""
-    secrets = _load_runtime_secrets()
-    cert_key = secrets.get("NLK_CERT_KEY", "")
-    clean_isbn = isbn.strip().replace("-", "")
-    data, err = _query_nlk_seoji(clean_isbn, cert_key)
-    return NlkResult(isbn=clean_isbn, data=data, error=err)
 
 
 @app.post("/api/feedback", response_model=FeedbackResult, tags=["피드백"])
