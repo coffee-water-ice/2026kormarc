@@ -7,9 +7,10 @@ Streamlit 컴포넌트는 이 모듈만 통해 백엔드를 호출한다.
 from __future__ import annotations
 
 import base64
+import os
 
 import requests
-import streamlit as st  
+import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
 # FastAPI 기본 포트 8000
@@ -149,6 +150,63 @@ def query_kpipa(isbn: str) -> dict:
         return {"isbn": isbn, "data": {}, "error": "🔌 백엔드 서버에 연결할 수 없습니다"}
     except Exception as e:
         return {"isbn": isbn, "data": {}, "error": f"❌ KPIPA 조회 실패: {e}"}
+
+
+# ── 국립중앙도서관 ISBN 서지정보 API ─────────────────────────
+
+_NLK_SEOJI_URL = "https://www.nl.go.kr/seoji/SearchApi.do"
+
+
+def _resolve_nlk_cert_key() -> str:
+    """NLK_CERT_KEY를 secrets.toml 또는 환경변수에서 로드."""
+    try:
+        key = st.secrets.get("NLK_CERT_KEY", "")
+        if key:
+            return key
+    except (FileNotFoundError, StreamlitSecretNotFoundError, KeyError, AttributeError):
+        pass
+    return os.environ.get("NLK_CERT_KEY", "")
+
+
+def query_nlk_isbn(isbn: str) -> dict:
+    """
+    국립중앙도서관 seoji ISBN 서지정보 API 직접 조회.
+
+    Returns:
+        {
+            "isbn": str,
+            "data": dict,   # NLK 원본 응답
+            "error": str | None,
+        }
+    """
+    cert_key = _resolve_nlk_cert_key()
+    if not cert_key:
+        return {
+            "isbn": isbn,
+            "data": {},
+            "error": "❌ NLK_CERT_KEY가 설정되지 않았습니다 (secrets.toml 또는 환경변수 확인)",
+        }
+
+    try:
+        resp = requests.get(
+            _NLK_SEOJI_URL,
+            params={
+                "cert_key":     cert_key,
+                "result_style": "json",
+                "page_no":      1,
+                "page_size":    10,
+                "isbn":         isbn,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return {"isbn": isbn, "data": resp.json(), "error": None}
+    except requests.exceptions.Timeout:
+        return {"isbn": isbn, "data": {}, "error": "⏱️ NLK API 요청 시간 초과"}
+    except requests.exceptions.ConnectionError:
+        return {"isbn": isbn, "data": {}, "error": "🔌 NLK API에 연결할 수 없습니다"}
+    except Exception as e:
+        return {"isbn": isbn, "data": {}, "error": f"❌ NLK API 조회 실패: {e}"}
 
 
 # ── 피드백 저장 ──────────────────────────────────────────────

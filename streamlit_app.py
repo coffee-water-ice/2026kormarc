@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from api_client import convert_isbn, query_kpipa
+from api_client import convert_isbn, query_kpipa, query_nlk_isbn
 
 
 st.set_page_config(page_title="ISBN → MARC", page_icon="📚", layout="wide")
@@ -52,3 +52,64 @@ if st.button("변환 실행", type="primary"):
         else:
             st.success("KPIPA 조회 완료")
             st.json(kpipa.get("data", {}))
+
+        st.divider()
+        st.subheader("국립중앙도서관 ISBN 서지정보 API")
+        with st.spinner("NLK API 조회 중..."):
+            nlk = query_nlk_isbn(isbn)
+
+        if nlk.get("error"):
+            st.error(nlk["error"])
+        else:
+            raw = nlk.get("data", {})
+            docs = raw.get("docs", [])
+            total = raw.get("TOTAL_COUNT", "0")
+
+            if not docs:
+                st.info(f"검색 결과 없음 (TOTAL_COUNT={total})")
+                st.json(raw)
+            else:
+                st.success(f"NLK 조회 완료 — {total}건 중 첫 번째 레코드")
+                doc = docs[0]
+
+                _NLK_FIELDS = [
+                    ("표제", "TITLE"),
+                    ("저자", "AUTHOR"),
+                    ("발행처", "PUBLISHER"),
+                    ("ISBN", "EA_ISBN"),
+                    ("ISBN 부가기호", "EA_ADD_CODE"),
+                    ("세트 ISBN", "SET_ISBN"),
+                    ("판사항", "EDITION_STMT"),
+                    ("페이지 → MARC 300 $a", "PAGE"),
+                    ("책크기 → MARC 300 $c", "BOOK_SIZE"),
+                    ("총서명", "SERIES_TITLE"),
+                    ("발행예정일", "PUBLISH_PREDATE"),
+                    ("KDC", "KDC"),
+                    ("DDC", "DDC"),
+                    ("형태사항", "FORM"),
+                    ("전자책 여부", "EBOOK_YN"),
+                    ("CIP 신청 여부", "CIP_YN"),
+                    ("CIP 제어번호", "CONTROL_NO"),
+                ]
+                rows = [(label, doc.get(key, "")) for label, key in _NLK_FIELDS if doc.get(key)]
+                mid = (len(rows) + 1) // 2
+                col1, col2 = st.columns(2)
+                with col1:
+                    for label, val in rows[:mid]:
+                        st.markdown(f"**{label}**: {val}")
+                with col2:
+                    for label, val in rows[mid:]:
+                        st.markdown(f"**{label}**: {val}")
+
+                _URL_FIELDS = [
+                    ("목차", "BOOK_TB_CNT_URL"),
+                    ("책소개", "BOOK_INTRODUCTION_URL"),
+                    ("책요약", "BOOK_SUMMARY_URL"),
+                    ("출판사 홈페이지", "PUBLISHER_URL"),
+                ]
+                links = [f"[{label}]({doc[key]})" for label, key in _URL_FIELDS if doc.get(key)]
+                if links:
+                    st.markdown("**링크**: " + " | ".join(links))
+
+                with st.expander("전체 응답 JSON"):
+                    st.json(raw)
