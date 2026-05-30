@@ -160,6 +160,15 @@ def _parse_aladin_physical_info(html: str) -> dict:
                     else:
                         c_part = f"{math.ceil(height/10)} cm"
 
+    # 목차(TOC) 파싱
+    toc_text = ""
+    toc_links = soup.select('a[href*="fn_show_introduce_TOC"]')
+    for link in toc_links:
+        classes = link.get("class") or []
+        if "Ere_sub_gray8" not in classes:
+            toc_text = link.get_text("\n", strip=True)
+            break
+
     # $b — 삽화 감지
     combined = " ".join(filter(None, [title_text, subtitle_text, desc_text]))
     has_illus, illus_label = detect_illustrations(combined)
@@ -205,6 +214,7 @@ def _parse_aladin_physical_info(html: str) -> dict:
         "page_value": page_value,
         "size_value": size_value,
         "illustration_possibility": illus_label if illus_label else "없음",
+        "toc_text": toc_text,
     }
 
 
@@ -229,7 +239,7 @@ def _fetch_aladin_detail_page(link: str) -> tuple[dict, str | None]:
         }, f"Aladin 상세 페이지 크롤링 예외: {e}"
 
 
-def build_300_field(item: dict) -> tuple[str, Field]:
+def build_300_field(item: dict) -> tuple[str, Field, str]:
     """
     알라딘 item dict에서 알라딘 상세 페이지 링크를 꺼내 300 필드를 생성한다.
 
@@ -237,7 +247,7 @@ def build_300_field(item: dict) -> tuple[str, Field]:
         item: 알라딘 API item dict (item.extra)
 
     Returns:
-        (mrk 문자열, pymarc.Field 객체)
+        (mrk 문자열, pymarc.Field 객체, 목차 텍스트)
     """
     _FALLBACK_MRK    = "=300  \\\\$a1책."
     _FALLBACK_SF     = [Subfield("a", "1책.")]
@@ -249,12 +259,13 @@ def build_300_field(item: dict) -> tuple[str, Field]:
             _dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
             return _FALLBACK_MRK, Field(
                 tag="300", indicators=["\\", "\\"], subfields=_FALLBACK_SF
-            )
+            ), ""
 
         detail_result, err = _fetch_aladin_detail_page(aladin_link)
 
         tag_300       = detail_result.get("300")       or _FALLBACK_MRK
         subfields_300 = detail_result.get("300_subfields") or _FALLBACK_SF
+        toc_text      = detail_result.get("toc_text", "")
 
         f_300 = Field(tag="300", indicators=[" ", " "], subfields=subfields_300)
 
@@ -266,18 +277,22 @@ def build_300_field(item: dict) -> tuple[str, Field]:
         if illus and illus != "없음":
             _dbg(f"[300] 삽화 감지됨 → {illus}")
 
-        return tag_300, f_300
+        if toc_text:
+            _dbg(f"[300] 목차 추출됨 ({len(toc_text)}자)")
+
+        return tag_300, f_300, toc_text
 
     except Exception as e:
         _dbg_err(f"[300] 생성 중 예외: {e}")
         return (
             "=300  \\\\$a1책. [예외]",
             Field(tag="300", indicators=["\\", "\\"],
-                  subfields=[Subfield("a", "1책. [예외]")])
+                  subfields=[Subfield("a", "1책. [예외]")]),
+            ""
         )
 
 
 def build_300_mrk(item: dict) -> str:
     """300 MRK 문자열만 필요한 경우의 편의 래퍼."""
-    tag_300, _ = build_300_field(item)
+    tag_300, _, _toc = build_300_field(item)
     return tag_300 or "=300  \\$a1책."
