@@ -7,7 +7,6 @@ Streamlit 컴포넌트는 이 모듈만 통해 백엔드를 호출한다.
 from __future__ import annotations
 
 import base64
-import os
 
 import requests
 import streamlit as st
@@ -154,23 +153,9 @@ def query_kpipa(isbn: str) -> dict:
 
 # ── 국립중앙도서관 ISBN 서지정보 API ─────────────────────────
 
-_NLK_SEOJI_URL = "https://www.nl.go.kr/seoji/SearchApi.do"
-
-
-def _resolve_nlk_cert_key() -> str:
-    """NLK_CERT_KEY를 secrets.toml 또는 환경변수에서 로드."""
-    try:
-        key = st.secrets.get("NLK_CERT_KEY", "")
-        if key:
-            return key
-    except (FileNotFoundError, StreamlitSecretNotFoundError, KeyError, AttributeError):
-        pass
-    return os.environ.get("NLK_CERT_KEY", "")
-
-
 def query_nlk_isbn(isbn: str) -> dict:
     """
-    국립중앙도서관 seoji ISBN 서지정보 API 직접 조회.
+    국립중앙도서관 seoji ISBN 서지정보 API — 백엔드(/api/nlk/{isbn}) 경유 조회.
 
     Returns:
         {
@@ -179,35 +164,19 @@ def query_nlk_isbn(isbn: str) -> dict:
             "error": str | None,
         }
     """
-    cert_key = _resolve_nlk_cert_key()
-    if not cert_key:
-        return {
-            "isbn": isbn,
-            "data": {},
-            "error": "❌ NLK_CERT_KEY가 설정되지 않았습니다 (secrets.toml 또는 환경변수 확인)",
-        }
-
     try:
         resp = requests.get(
-            _NLK_SEOJI_URL,
-            params={
-                "cert_key":     cert_key,
-                "result_style": "json",
-                "page_no":      1,
-                "page_size":    10,
-                "isbn":         isbn,
-            },
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-            timeout=30,
+            _url(f"/api/nlk/{isbn}"),
+            timeout=_default_timeout(),
         )
         resp.raise_for_status()
-        return {"isbn": isbn, "data": resp.json(), "error": None}
+        return resp.json()
     except requests.exceptions.Timeout:
-        return {"isbn": isbn, "data": {}, "error": "⏱️ NLK API 요청 시간 초과"}
+        return {"isbn": isbn, "data": {}, "error": "⏱️ NLK 요청 시간 초과"}
     except requests.exceptions.ConnectionError:
-        return {"isbn": isbn, "data": {}, "error": "🔌 NLK API에 연결할 수 없습니다"}
+        return {"isbn": isbn, "data": {}, "error": "🔌 백엔드 서버에 연결할 수 없습니다"}
     except Exception as e:
-        return {"isbn": isbn, "data": {}, "error": f"❌ NLK API 조회 실패: {e}"}
+        return {"isbn": isbn, "data": {}, "error": f"❌ NLK 조회 실패: {e}"}
 
 
 # ── 피드백 저장 ──────────────────────────────────────────────
