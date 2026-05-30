@@ -170,7 +170,7 @@ def _parse_aladin_physical_info(html: str) -> dict:
             break
 
     # $b — 삽화 감지
-    combined = " ".join(filter(None, [title_text, subtitle_text, desc_text]))
+    combined = " ".join(filter(None, [title_text, subtitle_text, desc_text, toc_text]))
     has_illus, illus_label = detect_illustrations(combined)
     if has_illus:
         b_part = illus_label  # type: ignore[assignment]
