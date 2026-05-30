@@ -92,6 +92,30 @@ with tab_single:
                 label = _SOURCE_LABEL.get(source, source or "알 수 없음")
                 st.caption(f"발행지 출처: **{label}**")
 
+                # ── 300 $b 삽화 감지 상세 ──────────────────────
+                illus_diag = meta.get("illus_diagnosis", {})
+                with st.expander("300 $b 삽화 감지 상세", expanded=True):
+                    sources = illus_diag.get("sources", {})
+                    if sources:
+                        st.markdown("**크롤링 소스**")
+                        for src_name, src_text in sources.items():
+                            st.text_area(
+                                src_name,
+                                value=src_text or "(없음)",
+                                height=80,
+                                disabled=True,
+                                key=f"illus_src_{src_name}",
+                            )
+
+                    st.markdown("**키워드 감지 결과**")
+                    detected = illus_diag.get("detected", [])
+                    if detected:
+                        df_illus = pd.DataFrame(detected)[["label", "keyword", "source"]]
+                        df_illus.columns = ["KORMARC 레이블", "감지 키워드", "출처"]
+                        st.dataframe(df_illus, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("감지된 삽화 키워드 없음")
+
                 st.subheader("메타 정보")
                 st.json(meta)
 

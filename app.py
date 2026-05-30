@@ -175,7 +175,7 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
         )
 
         # ── 300 ──────────────────────────────────────────────
-        tag_300, f_300, toc_text = build_300_field(item)
+        tag_300, f_300, illus_diag = build_300_field(item)
 
         # ── Record 조립 및 데이터 생성 ─────────────────────
         builder = MarcBuilder()
@@ -195,7 +195,8 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
             "pubyear": pubyear,
             "tag_260": tag_260 or "",
             "tag_300": tag_300 or "",
-            "toc_text": toc_text or "",
+            "toc_text": illus_diag.get("toc_text", ""),
+            "illus_diagnosis": illus_diag.get("illus_diagnosis", {}),
             "bundle_source": bundle.get("source"),
             "debug_lines": bundle.get("debug", []),
         }

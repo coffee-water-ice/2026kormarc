@@ -107,6 +107,38 @@ def detect_illustrations(text: str) -> tuple[bool, str | None]:
     return False, None
 
 
+def detect_illustrations_with_sources(
+    title_text: str, subtitle_text: str, desc_text: str, toc_text: str
+) -> tuple[bool, str | None, list[dict]]:
+    """
+    소스별로 삽화 키워드를 검사해 KORMARC 레이블과 출처를 함께 반환한다.
+
+    Returns:
+        (감지 여부, 레이블 문자열, 상세 리스트)
+        상세 리스트 예: [{"label": "사진", "keyword": "사진", "source": "책소개"}]
+    """
+    source_map = [
+        ("제목",   title_text),
+        ("부제",   subtitle_text),
+        ("책소개", desc_text),
+        ("목차",   toc_text),
+    ]
+    found: dict[str, dict] = {}
+    for label, keywords in _ILLUS_KEYWORD_GROUPS.items():
+        for kw in keywords:
+            for src_name, src_text in source_map:
+                if src_text and kw in src_text:
+                    found[label] = {"keyword": kw, "source": src_name}
+                    break
+            if label in found:
+                break
+    if found:
+        label_str = ", ".join(sorted(found.keys()))
+        detail = [{"label": k, **v} for k, v in found.items()]
+        return True, label_str, detail
+    return False, None, []
+
+
 def _parse_aladin_physical_info(html: str) -> dict:
     """
     알라딘 상세 페이지 HTML에서 형태사항(300 필드용) 데이터를 파싱한다.
@@ -169,9 +201,10 @@ def _parse_aladin_physical_info(html: str) -> dict:
             toc_text = link.get_text("\n", strip=True)
             break
 
-    # $b — 삽화 감지
-    combined = " ".join(filter(None, [title_text, subtitle_text, desc_text, toc_text]))
-    has_illus, illus_label = detect_illustrations(combined)
+    # $b — 삽화 감지 (소스별)
+    has_illus, illus_label, illus_detail = detect_illustrations_with_sources(
+        title_text, subtitle_text, desc_text, toc_text
+    )
     if has_illus:
         b_part = illus_label  # type: ignore[assignment]
 
@@ -215,6 +248,15 @@ def _parse_aladin_physical_info(html: str) -> dict:
         "size_value": size_value,
         "illustration_possibility": illus_label if illus_label else "없음",
         "toc_text": toc_text,
+        "illus_diagnosis": {
+            "sources": {
+                "제목":   title_text,
+                "부제":   subtitle_text,
+                "책소개": desc_text[:400],
+                "목차":   toc_text[:600],
+            },
+            "detected": illus_detail,
+        },
     }
 
 
@@ -239,19 +281,22 @@ def _fetch_aladin_detail_page(link: str) -> tuple[dict, str | None]:
         }, f"Aladin 상세 페이지 크롤링 예외: {e}"
 
 
-def build_300_field(item: dict) -> tuple[str, Field, str]:
+_EMPTY_DIAG = {"toc_text": "", "illus_diagnosis": {"sources": {}, "detected": []}}
+
+
+def build_300_field(item: dict) -> tuple[str, Field, dict]:
     """
     알라딘 item dict에서 알라딘 상세 페이지 링크를 꺼내 300 필드를 생성한다.
 
     Args:
-        item: 알라딘 API item dict (item.extra)
+        item: 알라딘 API item dict
 
     Returns:
-        (mrk 문자열, pymarc.Field 객체, 목차 텍스트)
+        (mrk 문자열, pymarc.Field 객체, 진단 dict)
+        진단 dict: {"toc_text": str, "illus_diagnosis": {"sources": {}, "detected": []}}
     """
     _FALLBACK_MRK    = "=300  \\\\$a1책."
     _FALLBACK_SF     = [Subfield("a", "1책.")]
-    _FALLBACK_FIELD  = Field(tag="300", indicators=[" ", " "], subfields=_FALLBACK_SF)
 
     try:
         aladin_link = (item or {}).get("link", "")
@@ -259,13 +304,14 @@ def build_300_field(item: dict) -> tuple[str, Field, str]:
             _dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
             return _FALLBACK_MRK, Field(
                 tag="300", indicators=["\\", "\\"], subfields=_FALLBACK_SF
-            ), ""
+            ), _EMPTY_DIAG
 
         detail_result, err = _fetch_aladin_detail_page(aladin_link)
 
-        tag_300       = detail_result.get("300")       or _FALLBACK_MRK
+        tag_300       = detail_result.get("300")           or _FALLBACK_MRK
         subfields_300 = detail_result.get("300_subfields") or _FALLBACK_SF
         toc_text      = detail_result.get("toc_text", "")
+        illus_diag    = detail_result.get("illus_diagnosis", {"sources": {}, "detected": []})
 
         f_300 = Field(tag="300", indicators=[" ", " "], subfields=subfields_300)
 
@@ -276,11 +322,10 @@ def build_300_field(item: dict) -> tuple[str, Field, str]:
         illus = detail_result.get("illustration_possibility")
         if illus and illus != "없음":
             _dbg(f"[300] 삽화 감지됨 → {illus}")
-
         if toc_text:
             _dbg(f"[300] 목차 추출됨 ({len(toc_text)}자)")
 
-        return tag_300, f_300, toc_text
+        return tag_300, f_300, {"toc_text": toc_text, "illus_diagnosis": illus_diag}
 
     except Exception as e:
         _dbg_err(f"[300] 생성 중 예외: {e}")
@@ -288,11 +333,11 @@ def build_300_field(item: dict) -> tuple[str, Field, str]:
             "=300  \\\\$a1책. [예외]",
             Field(tag="300", indicators=["\\", "\\"],
                   subfields=[Subfield("a", "1책. [예외]")]),
-            ""
+            _EMPTY_DIAG,
         )
 
 
 def build_300_mrk(item: dict) -> str:
     """300 MRK 문자열만 필요한 경우의 편의 래퍼."""
-    tag_300, _, _toc = build_300_field(item)
+    tag_300, _, _diag = build_300_field(item)
     return tag_300 or "=300  \\$a1책."
