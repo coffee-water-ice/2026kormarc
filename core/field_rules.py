@@ -290,9 +290,9 @@ def _parse_aladin_physical_info(html: str, api_description: str = "") -> dict:
             "sources": {
                 "제목":           title_text,
                 "부제":           subtitle_text,
-                "책소개":         desc_text[:400],
-                "목차":           toc_text[:600],
-                "출판사 제공 소개": pub_desc_text[:400],
+                "책소개":         desc_text,
+                "목차":           toc_text,
+                "출판사 제공 소개": pub_desc_text,
             },
             "detected": illus_detail,
             "_boxes": _diagnose_boxes(soup),

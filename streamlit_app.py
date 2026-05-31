@@ -102,7 +102,7 @@ with tab_single:
                             st.text_area(
                                 src_name,
                                 value=src_text or "(없음)",
-                                height=80,
+                                height=150,
                                 disabled=True,
                                 key=f"illus_src_{src_name}",
                             )
