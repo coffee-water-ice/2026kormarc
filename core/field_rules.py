@@ -173,9 +173,12 @@ def detect_illustrations_with_sources(
     return False, None, []
 
 
-def _parse_aladin_physical_info(html: str) -> dict:
+def _parse_aladin_physical_info(html: str, api_description: str = "") -> dict:
     """
     알라딘 상세 페이지 HTML에서 형태사항(300 필드용) 데이터를 파싱한다.
+
+    api_description: 알라딘 TTB API item["description"] — 책소개 섹션이 JS 렌더링으로만
+                     존재할 때(정적 HTML에 없을 때) 대체 소스로 사용.
 
     Returns:
         {
@@ -194,8 +197,8 @@ def _parse_aladin_physical_info(html: str) -> dict:
     title_text    = title_el.get_text(strip=True)    if title_el    else ""
     subtitle_text = subtitle_el.get_text(strip=True) if subtitle_el else ""
 
-    # 책소개: 레이블 "책소개" 섹션의 Ere_prod_mconts_R
-    desc_text = _find_section_text(soup, "책소개")
+    # 책소개: HTML에서 찾고, 없으면 TTB API description 사용
+    desc_text = _find_section_text(soup, "책소개") or api_description
 
     # 출판사 제공 소개: 레이블이 책마다 다름 — 순서대로 시도
     pub_desc_text = ""
@@ -297,9 +300,11 @@ def _parse_aladin_physical_info(html: str) -> dict:
     }
 
 
-def _fetch_aladin_detail_page(link: str) -> tuple[dict, str | None]:
+def _fetch_aladin_detail_page(link: str, api_description: str = "") -> tuple[dict, str | None]:
     """
     알라딘 상세 페이지를 HTTP로 가져와 형태사항 dict를 반환한다.
+
+    api_description: TTB API로부터 미리 받은 책소개 — JS 렌더링 섹션 대체용.
 
     Returns:
         (결과 dict, 에러 메시지 또는 None)
@@ -316,7 +321,7 @@ def _fetch_aladin_detail_page(link: str) -> tuple[dict, str | None]:
         res = requests.get(link, headers=_HEADERS, timeout=15)
         res.raise_for_status()
         res.encoding = "utf-8"
-        return _parse_aladin_physical_info(res.text), None
+        return _parse_aladin_physical_info(res.text, api_description), None
     except Exception as e:
         return {
             "300": "=300  \\\\$a1책. [상세 페이지 파싱 오류]",
@@ -345,14 +350,16 @@ def build_300_field(item: dict) -> tuple[str, Field, dict]:
     _FALLBACK_SF     = [Subfield("a", "1책.")]
 
     try:
-        aladin_link = (item or {}).get("link", "")
+        aladin_link     = (item or {}).get("link", "")
+        api_description = (item or {}).get("description", "") or ""
+
         if not aladin_link:
             _dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
             return _FALLBACK_MRK, Field(
                 tag="300", indicators=["\\", "\\"], subfields=_FALLBACK_SF
             ), _EMPTY_DIAG
 
-        detail_result, err = _fetch_aladin_detail_page(aladin_link)
+        detail_result, err = _fetch_aladin_detail_page(aladin_link, api_description=api_description)
 
         tag_300       = detail_result.get("300")           or _FALLBACK_MRK
         subfields_300 = detail_result.get("300_subfields") or _FALLBACK_SF
