@@ -107,8 +107,23 @@ def detect_illustrations(text: str) -> tuple[bool, str | None]:
     return False, None
 
 
+def _find_section_text(soup: BeautifulSoup, label: str) -> str:
+    """
+    알라딘 상세 페이지에서 레이블(Ere_prod_mconts_LL/LS)이 일치하는
+    Ere_prod_mconts_box 내의 Ere_prod_mconts_R 텍스트를 반환한다.
+    """
+    for box in soup.select("div.Ere_prod_mconts_box"):
+        for lbl_el in box.select(".Ere_prod_mconts_LL, .Ere_prod_mconts_LS"):
+            if lbl_el.get_text(" ", strip=True).strip() == label:
+                content = box.select_one(".Ere_prod_mconts_R")
+                if content:
+                    return content.get_text(" ", strip=True)
+    return ""
+
+
 def detect_illustrations_with_sources(
-    title_text: str, subtitle_text: str, desc_text: str, toc_text: str
+    title_text: str, subtitle_text: str, desc_text: str,
+    toc_text: str, pub_desc_text: str = ""
 ) -> tuple[bool, str | None, list[dict]]:
     """
     소스별로 삽화 키워드를 검사해 KORMARC 레이블과 출처를 함께 반환한다.
@@ -118,10 +133,11 @@ def detect_illustrations_with_sources(
         상세 리스트 예: [{"label": "사진", "keyword": "사진", "source": "책소개"}]
     """
     source_map = [
-        ("제목",   title_text),
-        ("부제",   subtitle_text),
-        ("책소개", desc_text),
-        ("목차",   toc_text),
+        ("제목",           title_text),
+        ("부제",           subtitle_text),
+        ("책소개",         desc_text),
+        ("목차",           toc_text),
+        ("출판사 제공 소개", pub_desc_text),
     ]
     found: dict[str, dict] = {}
     for label, keywords in _ILLUS_KEYWORD_GROUPS.items():
@@ -154,14 +170,21 @@ def _parse_aladin_physical_info(html: str) -> dict:
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # 제목·부제·책소개 (삽화 감지용)
-    title_text    = (soup.select_one("span.Ere_bo_title") or object).__class__.__name__  # 더미
+    # ── 5개 텍스트 소스 추출 ────────────────────────────────────
     title_el      = soup.select_one("span.Ere_bo_title")
     subtitle_el   = soup.select_one("span.Ere_sub1_title")
-    desc_el       = soup.select_one("div.Ere_prod_mconts_R")
     title_text    = title_el.get_text(strip=True)    if title_el    else ""
     subtitle_text = subtitle_el.get_text(strip=True) if subtitle_el else ""
-    desc_text     = desc_el.get_text(" ", strip=True) if desc_el    else ""
+
+    # 책소개: 레이블 "책소개" 섹션의 Ere_prod_mconts_R
+    desc_text = _find_section_text(soup, "책소개")
+
+    # 출판사 제공 소개: 레이블이 책마다 다름 — 순서대로 시도
+    pub_desc_text = ""
+    for _pub_label in ("출판사 제공 책소개", "출판사 소개"):
+        pub_desc_text = _find_section_text(soup, _pub_label)
+        if pub_desc_text:
+            break
 
     # 형태사항 블록 파싱
     a_part: str = ""
@@ -192,18 +215,19 @@ def _parse_aladin_physical_info(html: str) -> dict:
                     else:
                         c_part = f"{math.ceil(height/10)} cm"
 
-    # 목차(TOC) 파싱
+    # 목차(TOC) 파싱: #div_TOC_Short 내 비어 있지 않은 첫 번째 링크
     toc_text = ""
-    toc_links = soup.select('a[href*="fn_show_introduce_TOC"]')
-    for link in toc_links:
+    for link in soup.select('#div_TOC_Short a[href*="fn_show_introduce_TOC"]'):
         classes = link.get("class") or []
         if "Ere_sub_gray8" not in classes:
-            toc_text = link.get_text("\n", strip=True)
-            break
+            text = link.get_text("\n", strip=True)
+            if text:
+                toc_text = text
+                break
 
-    # $b — 삽화 감지 (소스별)
+    # $b — 삽화 감지 (소스별, 5개)
     has_illus, illus_label, illus_detail = detect_illustrations_with_sources(
-        title_text, subtitle_text, desc_text, toc_text
+        title_text, subtitle_text, desc_text, toc_text, pub_desc_text
     )
     if has_illus:
         b_part = illus_label  # type: ignore[assignment]
@@ -250,10 +274,11 @@ def _parse_aladin_physical_info(html: str) -> dict:
         "toc_text": toc_text,
         "illus_diagnosis": {
             "sources": {
-                "제목":   title_text,
-                "부제":   subtitle_text,
-                "책소개": desc_text[:400],
-                "목차":   toc_text[:600],
+                "제목":           title_text,
+                "부제":           subtitle_text,
+                "책소개":         desc_text[:400],
+                "목차":           toc_text[:600],
+                "출판사 제공 소개": pub_desc_text[:400],
             },
             "detected": illus_detail,
         },
