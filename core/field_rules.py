@@ -215,15 +215,8 @@ def _parse_aladin_physical_info(html: str) -> dict:
                     else:
                         c_part = f"{math.ceil(height/10)} cm"
 
-    # 목차(TOC) 파싱: #div_TOC_Short 내 비어 있지 않은 첫 번째 링크
-    toc_text = ""
-    for link in soup.select('#div_TOC_Short a[href*="fn_show_introduce_TOC"]'):
-        classes = link.get("class") or []
-        if "Ere_sub_gray8" not in classes:
-            text = link.get_text("\n", strip=True)
-            if text:
-                toc_text = text
-                break
+    # 목차(TOC) 파싱: 레이블 "목차" 섹션 전체 텍스트 (Short+All 포함)
+    toc_text = _find_section_text(soup, "목차")
 
     # $b — 삽화 감지 (소스별, 5개)
     has_illus, illus_label, illus_detail = detect_illustrations_with_sources(
@@ -281,6 +274,7 @@ def _parse_aladin_physical_info(html: str) -> dict:
                 "출판사 제공 소개": pub_desc_text[:400],
             },
             "detected": illus_detail,
+            "_html_preview": html[:300],
         },
     }
 
@@ -292,9 +286,18 @@ def _fetch_aladin_detail_page(link: str) -> tuple[dict, str | None]:
     Returns:
         (결과 dict, 에러 메시지 또는 None)
     """
+    _HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "ko-KR,ko;q=0.9",
+    }
     try:
-        res = requests.get(link, timeout=15)
+        res = requests.get(link, headers=_HEADERS, timeout=15)
         res.raise_for_status()
+        res.encoding = "utf-8"
         return _parse_aladin_physical_info(res.text), None
     except Exception as e:
         return {
