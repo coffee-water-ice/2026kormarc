@@ -107,18 +107,36 @@ def detect_illustrations(text: str) -> tuple[bool, str | None]:
     return False, None
 
 
+def _norm_label(text: str) -> str:
+    """레이블 텍스트에서 NBSP·줄바꿈 등 모든 공백을 일반 공백으로 정규화."""
+    return re.sub(r"[\s 　]+", " ", text).strip()
+
+
 def _find_section_text(soup: BeautifulSoup, label: str) -> str:
     """
     알라딘 상세 페이지에서 레이블(Ere_prod_mconts_LL/LS)이 일치하는
     Ere_prod_mconts_box 내의 Ere_prod_mconts_R 텍스트를 반환한다.
+    공백 정규화(NBSP 포함)를 적용해 비교한다.
     """
     for box in soup.select("div.Ere_prod_mconts_box"):
         for lbl_el in box.select(".Ere_prod_mconts_LL, .Ere_prod_mconts_LS"):
-            if lbl_el.get_text(" ", strip=True).strip() == label:
+            if _norm_label(lbl_el.get_text()) == label:
                 content = box.select_one(".Ere_prod_mconts_R")
                 if content:
                     return content.get_text(" ", strip=True)
     return ""
+
+
+def _diagnose_boxes(soup: BeautifulSoup) -> list[dict]:
+    """디버그: 모든 Ere_prod_mconts_box의 레이블을 수집해 반환."""
+    result = []
+    for box in soup.select("div.Ere_prod_mconts_box"):
+        labels = [
+            _norm_label(el.get_text())
+            for el in box.select(".Ere_prod_mconts_LL, .Ere_prod_mconts_LS")
+        ]
+        result.append({"labels": list(dict.fromkeys(labels))})
+    return result
 
 
 def detect_illustrations_with_sources(
@@ -274,7 +292,7 @@ def _parse_aladin_physical_info(html: str) -> dict:
                 "출판사 제공 소개": pub_desc_text[:400],
             },
             "detected": illus_detail,
-            "_html_preview": html[:300],
+            "_boxes": _diagnose_boxes(soup),
         },
     }
 
