@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 # 내부 모듈
 from core.marc_builder import MarcBuilder
-from core.field_rules import build_260_field, build_300_field
+from core.field_rules import build_260_field, build_300_field, get_debug_lines, clear_debug_lines
 from api.external_apis import build_pub_location_bundle, get_aladin_item_by_isbn, get_kpipa_book_detail
 from database.feedback_logger import init_db, save_feedback_record
 
@@ -175,7 +175,9 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
         )
 
         # ── 300 ──────────────────────────────────────────────
+        clear_debug_lines()
         tag_300, f_300, illus_diag = build_300_field(item, isbn=isbn)
+        field_debug = get_debug_lines()
 
         # ── Record 조립 및 데이터 생성 ─────────────────────
         builder = MarcBuilder()
@@ -199,6 +201,7 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
             "illus_diagnosis": illus_diag.get("illus_diagnosis", {}),
             "bundle_source": bundle.get("source"),
             "debug_lines": bundle.get("debug", []),
+            "field_debug": field_debug,
         }
 
         return ConvertResult(

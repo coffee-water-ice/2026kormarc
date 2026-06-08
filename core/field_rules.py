@@ -348,14 +348,14 @@ _KYOBO_HEADERS = {
 }
 
 
-def _fetch_kyobo_description(isbn: str) -> str:
+def _fetch_kyobo_description(isbn: str) -> tuple[str, str]:
     """
     교보문고에서 ISBN으로 책소개 전문을 가져온다.
 
-    반환: 책소개 텍스트 (실패 시 빈 문자열)
+    반환: (책소개 텍스트, 상태 메시지)
     """
     if not isbn:
-        return ""
+        return "", "ISBN 없음"
     try:
         # 1단계: ISBN으로 S-code 조회
         r = requests.get(
@@ -365,7 +365,7 @@ def _fetch_kyobo_description(isbn: str) -> str:
         )
         m = re.search(r'/detail/(S\d+)', r.text)
         if not m:
-            return ""
+            return "", f"S-code 미발견 (검색 응답 {len(r.text)}자, 상태 {r.status_code})"
         s_code = m.group(1)
 
         # 2단계: 상품 페이지에서 책소개 파싱
@@ -375,15 +375,21 @@ def _fetch_kyobo_description(isbn: str) -> str:
             timeout=10,
         )
         r2.encoding = "utf-8"
+        if not r2.text:
+            return "", f"상품 페이지 빈 응답 (S-code={s_code})"
+
         soup = BeautifulSoup(r2.text, "html.parser")
         blocks = [
             el.get_text(" ", strip=True)
             for el in soup.select("div.info_text")
             if el.get_text(strip=True) and "Klover" not in el.get_text(strip=True)
         ]
-        return " ".join(blocks)
-    except Exception:
-        return ""
+        desc = " ".join(blocks)
+        if not desc:
+            return "", f"info_text 블록 없음 (페이지 {len(r2.text)}자)"
+        return desc, f"성공 ({len(desc)}자, S-code={s_code})"
+    except Exception as e:
+        return "", f"예외: {e}"
 
 
 def build_300_field(item: dict, isbn: str = "") -> tuple[str, Field, dict]:
@@ -405,10 +411,12 @@ def build_300_field(item: dict, isbn: str = "") -> tuple[str, Field, dict]:
         api_description = (item or {}).get("description", "") or ""
 
         # 교보문고에서 전문 책소개 시도 (알라딘 API description보다 길고 정확함)
-        kyobo_desc = _fetch_kyobo_description(isbn)
+        kyobo_desc, kyobo_status = _fetch_kyobo_description(isbn)
         if kyobo_desc:
             api_description = kyobo_desc
-            _dbg(f"[300] 교보문고 책소개 {len(kyobo_desc)}자 획득")
+            _dbg(f"[300] 교보문고 책소개 획득: {kyobo_status}")
+        else:
+            _dbg_err(f"[300] 교보문고 실패: {kyobo_status}")
 
         if not aladin_link:
             _dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
