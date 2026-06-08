@@ -175,7 +175,7 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
         )
 
         # ── 300 ──────────────────────────────────────────────
-        tag_300, f_300, illus_diag = build_300_field(item)
+        tag_300, f_300, illus_diag = build_300_field(item, isbn=isbn)
 
         # ── Record 조립 및 데이터 생성 ─────────────────────
         builder = MarcBuilder()

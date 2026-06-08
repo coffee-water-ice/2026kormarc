@@ -334,8 +334,59 @@ def _fetch_aladin_detail_page(link: str, api_description: str = "") -> tuple[dic
 
 _EMPTY_DIAG = {"toc_text": "", "illus_diagnosis": {"sources": {}, "detected": []}}
 
+_KYOBO_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+}
 
-def build_300_field(item: dict) -> tuple[str, Field, dict]:
+
+def _fetch_kyobo_description(isbn: str) -> str:
+    """
+    교보문고에서 ISBN으로 책소개 전문을 가져온다.
+
+    반환: 책소개 텍스트 (실패 시 빈 문자열)
+    """
+    if not isbn:
+        return ""
+    try:
+        # 1단계: ISBN으로 S-code 조회
+        r = requests.get(
+            f"https://search.kyobobook.co.kr/search?keyword={isbn}",
+            headers=_KYOBO_HEADERS,
+            timeout=10,
+        )
+        m = re.search(r'/detail/(S\d+)', r.text)
+        if not m:
+            return ""
+        s_code = m.group(1)
+
+        # 2단계: 상품 페이지에서 책소개 파싱
+        r2 = requests.get(
+            f"https://product.kyobobook.co.kr/detail/{s_code}",
+            headers=_KYOBO_HEADERS,
+            timeout=10,
+        )
+        r2.encoding = "utf-8"
+        soup = BeautifulSoup(r2.text, "html.parser")
+        blocks = [
+            el.get_text(" ", strip=True)
+            for el in soup.select("div.info_text")
+            if el.get_text(strip=True) and "Klover" not in el.get_text(strip=True)
+        ]
+        return " ".join(blocks)
+    except Exception:
+        return ""
+
+
+def build_300_field(item: dict, isbn: str = "") -> tuple[str, Field, dict]:
     """
     알라딘 item dict에서 알라딘 상세 페이지 링크를 꺼내 300 필드를 생성한다.
 
@@ -352,6 +403,12 @@ def build_300_field(item: dict) -> tuple[str, Field, dict]:
     try:
         aladin_link     = (item or {}).get("link", "")
         api_description = (item or {}).get("description", "") or ""
+
+        # 교보문고에서 전문 책소개 시도 (알라딘 API description보다 길고 정확함)
+        kyobo_desc = _fetch_kyobo_description(isbn)
+        if kyobo_desc:
+            api_description = kyobo_desc
+            _dbg(f"[300] 교보문고 책소개 {len(kyobo_desc)}자 획득")
 
         if not aladin_link:
             _dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
