@@ -357,26 +357,28 @@ def _fetch_kyobo_description(isbn: str) -> tuple[str, str]:
     if not isbn:
         return "", "ISBN 없음"
     try:
-        # 1단계: ISBN으로 S-code 조회
-        r = requests.get(
-            f"https://search.kyobobook.co.kr/search?keyword={isbn}",
-            headers=_KYOBO_HEADERS,
-            timeout=10,
-        )
+        session = requests.Session()
+
+        # 1단계: 검색으로 S-code 획득 (쿠키도 함께 수집)
+        search_url = f"https://search.kyobobook.co.kr/search?keyword={isbn}"
+        r = session.get(search_url, headers=_KYOBO_HEADERS, timeout=10)
         m = re.search(r'/detail/(S\d+)', r.text)
         if not m:
-            return "", f"S-code 미발견 (검색 응답 {len(r.text)}자, 상태 {r.status_code})"
+            return "", f"S-code 미발견 (검색 {r.status_code}/{len(r.text)}자)"
         s_code = m.group(1)
 
-        # 2단계: 상품 페이지에서 책소개 파싱
-        r2 = requests.get(
-            f"https://product.kyobobook.co.kr/detail/{s_code}",
-            headers=_KYOBO_HEADERS,
-            timeout=10,
-        )
+        # 2단계: 상품 페이지 — Referer + Session 쿠키 사용
+        product_url = f"https://product.kyobobook.co.kr/detail/{s_code}"
+        product_headers = {
+            **_KYOBO_HEADERS,
+            "Referer": search_url,
+        }
+        r2 = session.get(product_url, headers=product_headers, timeout=10)
         r2.encoding = "utf-8"
-        if not r2.text:
-            return "", f"상품 페이지 빈 응답 (S-code={s_code})"
+
+        status_info = f"S-code={s_code}, HTTP={r2.status_code}, 크기={len(r2.content)}bytes"
+        if not r2.content:
+            return "", f"상품 페이지 빈 응답 ({status_info})"
 
         soup = BeautifulSoup(r2.text, "html.parser")
         blocks = [
@@ -386,8 +388,10 @@ def _fetch_kyobo_description(isbn: str) -> tuple[str, str]:
         ]
         desc = " ".join(blocks)
         if not desc:
-            return "", f"info_text 블록 없음 (페이지 {len(r2.text)}자)"
-        return desc, f"성공 ({len(desc)}자, S-code={s_code})"
+            # 페이지는 있지만 info_text 없음 — 첫 500자 로그
+            preview = r2.text[:500].replace("\n", " ")
+            return "", f"info_text 없음 ({status_info}) 미리보기: {preview}"
+        return desc, f"성공 ({len(desc)}자, {status_info})"
     except Exception as e:
         return "", f"예외: {e}"
 
