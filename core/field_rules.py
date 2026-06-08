@@ -334,160 +334,51 @@ def _fetch_aladin_detail_page(link: str, api_description: str = "") -> tuple[dic
 
 _EMPTY_DIAG = {"toc_text": "", "illus_diagnosis": {"sources": {}, "detected": []}}
 
-_KYOBO_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "ko-KR,ko;q=0.9",
-    "Accept-Encoding": "gzip, deflate",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-}
 
-
-def _fetch_kyobo_description(isbn: str) -> tuple[str, str]:
+def build_300_field(item: dict) -> tuple[str, Field, dict]:
     """
-    교보문고에서 ISBN으로 책소개 전문을 가져온다.
+    알라딘 item dict에서 알라딘 상세 페이지 링크를 꺼내 300 필드를 생성한다.
 
-    반환: (책소개 텍스트, 상태 메시지)
-    """
-    if not isbn:
-        return "", "ISBN 없음"
-    try:
-        session = requests.Session()
-
-        # 1단계: 검색으로 S-code 획득 (쿠키도 함께 수집)
-        search_url = f"https://search.kyobobook.co.kr/search?keyword={isbn}"
-        r = session.get(search_url, headers=_KYOBO_HEADERS, timeout=10)
-        m = re.search(r'/detail/(S\d+)', r.text)
-        if not m:
-            return "", f"S-code 미발견 (검색 {r.status_code}/{len(r.text)}자)"
-        s_code = m.group(1)
-
-        # 2단계: 상품 페이지 — Referer + Session 쿠키 사용
-        product_url = f"https://product.kyobobook.co.kr/detail/{s_code}"
-        product_headers = {
-            **_KYOBO_HEADERS,
-            "Referer": search_url,
-        }
-        r2 = session.get(product_url, headers=product_headers, timeout=10)
-        r2.encoding = "utf-8"
-
-        status_info = f"S-code={s_code}, HTTP={r2.status_code}, 크기={len(r2.content)}bytes"
-        if not r2.content:
-            return "", f"상품 페이지 빈 응답 ({status_info})"
-
-        soup = BeautifulSoup(r2.text, "html.parser")
-        blocks = [
-            el.get_text(" ", strip=True)
-            for el in soup.select("div.info_text")
-            if el.get_text(strip=True) and "Klover" not in el.get_text(strip=True)
-        ]
-        desc = " ".join(blocks)
-        if not desc:
-            # 페이지는 있지만 info_text 없음 — 첫 500자 로그
-            preview = r2.text[:500].replace("\n", " ")
-            return "", f"info_text 없음 ({status_info}) 미리보기: {preview}"
-        return desc, f"성공 ({len(desc)}자, {status_info})"
-    except Exception as e:
-        return "", f"예외: {e}"
-
-
-def build_300_field(item: dict, isbn: str = "") -> tuple[str, Field, dict]:
-    """
-    알라딘 TTB API item dict에서 300 필드를 생성한다.
-
-    쪽수·크기는 item["subInfo"]에서 직접 추출 (Aladin 상세 페이지 크롤링 불필요).
-    책소개는 교보문고 크롤링 → Aladin API description 순서로 폴백.
+    Args:
+        item: 알라딘 API item dict
 
     Returns:
         (mrk 문자열, pymarc.Field 객체, 진단 dict)
+        진단 dict: {"toc_text": str, "illus_diagnosis": {"sources": {}, "detected": []}}
     """
-    _FALLBACK_SF = [Subfield("a", "1책.")]
+    _FALLBACK_MRK    = "=300  \\\\$a1책."
+    _FALLBACK_SF     = [Subfield("a", "1책.")]
 
     try:
-        item     = item or {}
-        sub_info = item.get("subInfo") or {}
+        aladin_link     = (item or {}).get("link", "")
+        api_description = (item or {}).get("description", "") or ""
 
-        # ── $a 쪽수: subInfo.itemPage ────────────────────────
-        item_page = int(sub_info.get("itemPage") or 0)
-        a_part    = f"{item_page} p." if item_page else ""
+        if not aladin_link:
+            _dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
+            return _FALLBACK_MRK, Field(
+                tag="300", indicators=["\\", "\\"], subfields=_FALLBACK_SF
+            ), _EMPTY_DIAG
 
-        # ── $c 크기: subInfo.sizeHeight / sizeWidth (mm → cm) ─
-        size_h = int(sub_info.get("sizeHeight") or 0)
-        size_w = int(sub_info.get("sizeWidth")  or 0)
-        if size_h:
-            if size_w and (size_w == size_h or size_w > size_h or size_w < size_h / 2):
-                c_part = f"{math.ceil(size_w/10)}x{math.ceil(size_h/10)} cm"
-            else:
-                c_part = f"{math.ceil(size_h/10)} cm"
-        else:
-            c_part = ""
+        detail_result, err = _fetch_aladin_detail_page(aladin_link, api_description=api_description)
 
-        # ── 책소개: 교보문고 우선, Aladin API 폴백 ─────────────
-        api_description = item.get("description", "") or ""
-        kyobo_desc, kyobo_status = _fetch_kyobo_description(isbn)
-        if kyobo_desc:
-            api_description = kyobo_desc
-            _dbg(f"[300] 교보문고 책소개: {kyobo_status}")
-        else:
-            _dbg_err(f"[300] 교보문고 실패: {kyobo_status}")
+        tag_300       = detail_result.get("300")           or _FALLBACK_MRK
+        subfields_300 = detail_result.get("300_subfields") or _FALLBACK_SF
+        toc_text      = detail_result.get("toc_text", "")
+        illus_diag    = detail_result.get("illus_diagnosis", {"sources": {}, "detected": []})
 
-        # ── 제목·부제 ────────────────────────────────────────
-        title_text    = item.get("title", "") or ""
-        subtitle_text = sub_info.get("subTitle", "") or ""
+        f_300 = Field(tag="300", indicators=[" ", " "], subfields=subfields_300)
 
-        # ── $b 삽화 감지 ─────────────────────────────────────
-        has_illus, illus_label, illus_detail = detect_illustrations_with_sources(
-            title_text, subtitle_text, api_description, "", ""
-        )
-        b_part = illus_label if has_illus else ""
+        if err:
+            _dbg_err(f"[300] {err}")
+        _dbg(f"[300] {tag_300}")
 
-        # ── subfield 리스트 ──────────────────────────────────
-        subfields_300: list[Subfield] = []
-        if a_part: subfields_300.append(Subfield("a", a_part))
-        if b_part: subfields_300.append(Subfield("b", b_part))
-        if c_part: subfields_300.append(Subfield("c", c_part))
-        if not subfields_300:
-            subfields_300 = _FALLBACK_SF
+        illus = detail_result.get("illustration_possibility")
+        if illus and illus != "없음":
+            _dbg(f"[300] 삽화 감지됨 → {illus}")
+        if toc_text:
+            _dbg(f"[300] 목차 추출됨 ({len(toc_text)}자)")
 
-        # ── MRK 텍스트 ───────────────────────────────────────
-        mrk_parts: list[str] = []
-        if a_part:
-            chunk = f"$a{a_part}"
-            if b_part:
-                chunk += f" :$b{b_part}"
-            mrk_parts.append(chunk)
-        elif b_part:
-            mrk_parts.append(f"$b{b_part}")
-        if c_part:
-            mrk_parts.append(f"; $c{c_part}" if mrk_parts else f"$c{c_part}")
-        if not mrk_parts:
-            mrk_parts = ["$a1책."]
-
-        field_300 = "=300  \\\\" + " ".join(mrk_parts)
-        f_300     = Field(tag="300", indicators=[" ", " "], subfields=subfields_300)
-
-        _dbg(f"[300] {field_300}")
-        if b_part:
-            _dbg(f"[300] 삽화 감지됨 → {b_part}")
-
-        illus_diag = {
-            "sources": {
-                "제목":           title_text,
-                "부제":           subtitle_text,
-                "책소개":         api_description,
-                "목차":           "",
-                "출판사 제공 소개": "",
-            },
-            "detected":      illus_detail,
-            "_data_source":  "Aladin API subInfo",
-        }
-
-        return field_300, f_300, {"toc_text": "", "illus_diagnosis": illus_diag}
+        return tag_300, f_300, {"toc_text": toc_text, "illus_diagnosis": illus_diag}
 
     except Exception as e:
         _dbg_err(f"[300] 생성 중 예외: {e}")
