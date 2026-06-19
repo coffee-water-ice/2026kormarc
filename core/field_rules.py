@@ -173,7 +173,32 @@ def detect_illustrations_with_sources(
     return False, None, []
 
 
-def _parse_aladin_physical_info(html: str, api_description: str = "") -> dict:
+def _fetch_naver_description(isbn: str, client_id: str, client_secret: str) -> str:
+    """네이버 책 검색 API(book_adv)로 책소개를 가져온다."""
+    if not client_id or not client_secret or not isbn:
+        return ""
+    try:
+        r = requests.get(
+            "https://openapi.naver.com/v1/search/book_adv.json",
+            params={"d_isbn": isbn, "display": 1},
+            headers={
+                "X-Naver-Client-Id":     client_id,
+                "X-Naver-Client-Secret": client_secret,
+            },
+            timeout=8,
+        )
+        if not r.ok:
+            return ""
+        items = r.json().get("items", [])
+        if not items:
+            return ""
+        raw = items[0].get("description", "")
+        return re.sub(r"<[^>]+>", "", raw).strip()
+    except Exception:
+        return ""
+
+
+def _parse_aladin_physical_info(html: str, api_description: str = "", naver_description: str = "") -> dict:
     """
     알라딘 상세 페이지 HTML에서 형태사항(300 필드용) 데이터를 파싱한다.
 
@@ -197,8 +222,8 @@ def _parse_aladin_physical_info(html: str, api_description: str = "") -> dict:
     title_text    = title_el.get_text(strip=True)    if title_el    else ""
     subtitle_text = subtitle_el.get_text(strip=True) if subtitle_el else ""
 
-    # 책소개: HTML에서 찾고, 없으면 TTB API description 사용
-    desc_text = _find_section_text(soup, "책소개") or api_description
+    # 책소개: 네이버 API → 알라딘 HTML → TTB API 순서로 fallback
+    desc_text = naver_description or _find_section_text(soup, "책소개") or api_description
 
     # 출판사 제공 소개: 레이블이 책마다 다름 — 순서대로 시도
     pub_desc_text = ""
@@ -288,6 +313,7 @@ def _parse_aladin_physical_info(html: str, api_description: str = "") -> dict:
         "toc_text": toc_text,
         "illus_diagnosis": {
             "sources": {
+                "네이버 책소개":   naver_description,
                 "제목":           title_text,
                 "부제":           subtitle_text,
                 "책소개":         desc_text,
@@ -300,7 +326,7 @@ def _parse_aladin_physical_info(html: str, api_description: str = "") -> dict:
     }
 
 
-def _fetch_aladin_detail_page(link: str, api_description: str = "") -> tuple[dict, str | None]:
+def _fetch_aladin_detail_page(link: str, api_description: str = "", naver_description: str = "") -> tuple[dict, str | None]:
     """
     알라딘 상세 페이지를 HTTP로 가져와 형태사항 dict를 반환한다.
 
@@ -321,7 +347,7 @@ def _fetch_aladin_detail_page(link: str, api_description: str = "") -> tuple[dic
         res = requests.get(link, headers=_HEADERS, timeout=15)
         res.raise_for_status()
         res.encoding = "utf-8"
-        return _parse_aladin_physical_info(res.text, api_description), None
+        return _parse_aladin_physical_info(res.text, api_description, naver_description), None
     except Exception as e:
         return {
             "300": "=300  \\\\$a1책. [상세 페이지 파싱 오류]",
@@ -335,12 +361,14 @@ def _fetch_aladin_detail_page(link: str, api_description: str = "") -> tuple[dic
 _EMPTY_DIAG = {"toc_text": "", "illus_diagnosis": {"sources": {}, "detected": []}}
 
 
-def build_300_field(item: dict) -> tuple[str, Field, dict]:
+def build_300_field(item: dict, isbn: str = "", secrets: dict | None = None) -> tuple[str, Field, dict]:
     """
     알라딘 item dict에서 알라딘 상세 페이지 링크를 꺼내 300 필드를 생성한다.
 
     Args:
-        item: 알라딘 API item dict
+        item:    알라딘 API item dict
+        isbn:    ISBN-13 (네이버 API 호출용)
+        secrets: 런타임 시크릿 dict (NAVER_SEARCH_KEY_ID/SECRET 포함)
 
     Returns:
         (mrk 문자열, pymarc.Field 객체, 진단 dict)
@@ -353,13 +381,28 @@ def build_300_field(item: dict) -> tuple[str, Field, dict]:
         aladin_link     = (item or {}).get("link", "")
         api_description = (item or {}).get("description", "") or ""
 
+        # 네이버 책소개 수집
+        naver_description = ""
+        if isbn and secrets:
+            naver_description = _fetch_naver_description(
+                isbn,
+                (secrets or {}).get("NAVER_SEARCH_KEY_ID", ""),
+                (secrets or {}).get("NAVER_SEARCH_KEY_SECRET", ""),
+            )
+            if naver_description:
+                _dbg(f"[300] 네이버 책소개 수집됨 ({len(naver_description)}자)")
+            else:
+                _dbg("[300] 네이버 책소개 없음 (미수록 또는 키 미설정)")
+
         if not aladin_link:
             _dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
             return _FALLBACK_MRK, Field(
                 tag="300", indicators=["\\", "\\"], subfields=_FALLBACK_SF
             ), _EMPTY_DIAG
 
-        detail_result, err = _fetch_aladin_detail_page(aladin_link, api_description=api_description)
+        detail_result, err = _fetch_aladin_detail_page(
+            aladin_link, api_description=api_description, naver_description=naver_description
+        )
 
         tag_300       = detail_result.get("300")           or _FALLBACK_MRK
         subfields_300 = detail_result.get("300_subfields") or _FALLBACK_SF

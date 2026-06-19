@@ -137,7 +137,8 @@ def _load_runtime_secrets() -> dict:
         data = loaded if isinstance(loaded, dict) else {}
 
     # 2) 환경변수로 덮어쓰기 (배포 환경 우선)
-    for key in ("ALADIN_TTB_KEY", "OPENAI_API_KEY", "NLK_CERT_KEY", "KPIPA_API_KEY", "DATA_GO_KR"):
+    for key in ("ALADIN_TTB_KEY", "OPENAI_API_KEY", "NLK_CERT_KEY", "KPIPA_API_KEY", "DATA_GO_KR",
+                "NAVER_SEARCH_KEY_ID", "NAVER_SEARCH_KEY_SECRET"):
         env_val = os.environ.get(key)
         if env_val:
             data[key] = env_val
@@ -175,7 +176,7 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
         )
 
         # ── 300 ──────────────────────────────────────────────
-        tag_300, f_300, illus_diag = build_300_field(item)
+        tag_300, f_300, illus_diag = build_300_field(item, isbn=isbn, secrets=secrets)
 
         # ── Record 조립 및 데이터 생성 ─────────────────────
         builder = MarcBuilder()

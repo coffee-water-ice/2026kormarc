@@ -96,16 +96,16 @@ with tab_single:
                 illus_diag = meta.get("illus_diagnosis", {})
                 with st.expander("300 $b 삽화 감지 상세", expanded=True):
                     sources = illus_diag.get("sources", {})
-                    if sources:
-                        st.markdown("**크롤링 소스**")
-                        for src_name, src_text in sources.items():
-                            st.text_area(
-                                src_name,
-                                value=src_text or "(없음)",
-                                height=150,
-                                disabled=True,
-                                key=f"illus_src_{src_name}",
-                            )
+                    naver_desc = sources.get("네이버 책소개", "")
+                    st.markdown("**네이버 책소개**")
+                    st.text_area(
+                        "네이버 책소개",
+                        value=naver_desc or "(없음)",
+                        height=200,
+                        disabled=True,
+                        key="illus_src_naver",
+                        label_visibility="collapsed",
+                    )
 
                     st.markdown("**키워드 감지 결과**")
                     detected = illus_diag.get("detected", [])
