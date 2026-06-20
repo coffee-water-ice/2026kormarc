@@ -198,6 +198,23 @@ def _fetch_naver_description(isbn: str, client_id: str, client_secret: str) -> s
         return ""
 
 
+def _parse_aladin_categories(soup: BeautifulSoup) -> list[str]:
+    """알라딘 상세 페이지의 conts_info_list2 블록에서 분류 경로 목록을 추출한다."""
+    cat_div = soup.select_one("div.conts_info_list2")
+    if not cat_div:
+        return []
+    results = []
+    for li in cat_div.select("li"):
+        text = li.get_text(" ", strip=True)
+        # "보기" / "접기" 버튼 텍스트 제거
+        text = re.sub(r"\s*(보기|접기)\s*$", "", text).strip()
+        # 연속 공백·중복 꺾쇠 정리
+        text = re.sub(r"\s{2,}", " ", text)
+        if text:
+            results.append(text)
+    return results
+
+
 def _parse_aladin_physical_info(html: str, api_description: str = "", naver_description: str = "") -> dict:
     """
     알라딘 상세 페이지 HTML에서 형태사항(300 필드용) 데이터를 파싱한다.
@@ -264,6 +281,9 @@ def _parse_aladin_physical_info(html: str, api_description: str = "", naver_desc
     # 목차(TOC) 파싱: 레이블 "목차" 섹션 전체 텍스트 (Short+All 포함)
     toc_text = _find_section_text(soup, "목차")
 
+    # 알라딘 카테고리 경로 추출
+    aladin_categories = _parse_aladin_categories(soup)
+
     # $b — 삽화 감지 (소스별, 5개)
     has_illus, illus_label, illus_detail = detect_illustrations_with_sources(
         title_text, subtitle_text, desc_text, toc_text, pub_desc_text
@@ -320,6 +340,7 @@ def _parse_aladin_physical_info(html: str, api_description: str = "", naver_desc
                 "목차":           toc_text,
                 "출판사 제공 소개": pub_desc_text,
             },
+            "알라딘 카테고리": aladin_categories,
             "detected": illus_detail,
             "_boxes": _diagnose_boxes(soup),
         },

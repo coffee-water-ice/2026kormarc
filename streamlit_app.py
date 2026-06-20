@@ -89,12 +89,6 @@ with tab_single:
 
                 meta = result.get("meta", {})
 
-                # ── 카테고리 ───────────────────────────────────
-                cat_name = meta.get("category_name", "")
-                cat_id   = meta.get("category_id", "")
-                if cat_name:
-                    st.caption(f"카테고리: **{cat_name}** (ID: {cat_id})")
-
                 source = meta.get("bundle_source", "")
                 label = _SOURCE_LABEL.get(source, source or "알 수 없음")
                 st.caption(f"발행지 출처: **{label}**")
@@ -113,6 +107,15 @@ with tab_single:
                         key="illus_src_naver",
                         label_visibility="collapsed",
                     )
+
+                    # ── 알라딘 카테고리 ──────────────────────────
+                    aladin_cats = illus_diag.get("알라딘 카테고리", [])
+                    st.markdown("**알라딘 카테고리**")
+                    if aladin_cats:
+                        for cat_path in aladin_cats:
+                            st.markdown(f"- {cat_path}")
+                    else:
+                        st.caption("(카테고리 정보 없음)")
 
                     st.markdown("**키워드 감지 결과**")
                     detected = illus_diag.get("detected", [])
