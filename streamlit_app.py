@@ -88,6 +88,13 @@ with tab_single:
                 st.code(result.get("mrk_text", ""), language="text")
 
                 meta = result.get("meta", {})
+
+                # ── 카테고리 ───────────────────────────────────
+                cat_name = meta.get("category_name", "")
+                cat_id   = meta.get("category_id", "")
+                if cat_name:
+                    st.caption(f"카테고리: **{cat_name}** (ID: {cat_id})")
+
                 source = meta.get("bundle_source", "")
                 label = _SOURCE_LABEL.get(source, source or "알 수 없음")
                 st.caption(f"발행지 출처: **{label}**")

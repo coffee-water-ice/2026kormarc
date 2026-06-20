@@ -196,6 +196,8 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
             "pubyear": pubyear,
             "tag_260": tag_260 or "",
             "tag_300": tag_300 or "",
+            "category_id":   (item or {}).get("categoryId", ""),
+            "category_name": (item or {}).get("categoryName", ""),
             "toc_text": illus_diag.get("toc_text", ""),
             "illus_diagnosis": illus_diag.get("illus_diagnosis", {}),
             "bundle_source": bundle.get("source"),
