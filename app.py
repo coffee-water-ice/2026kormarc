@@ -194,6 +194,7 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
             "isbn": isbn,
             "aladin_title": (item or {}).get("title", ""),
             "publisher_raw": publisher_raw,
+            "place_display": bundle.get("place_display", ""),
             "pubyear": pubyear,
             "tag_260": tag_260 or "",
             "tag_300": tag_300 or "",

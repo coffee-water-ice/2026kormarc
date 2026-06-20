@@ -39,10 +39,10 @@ def _results_to_dataframe(results: list[dict]) -> pd.DataFrame:
         mrk = r.get("mrk_text", "")
         rows.append({
             "ISBN":       r.get("isbn", ""),
-            "제목":       meta.get("title", ""),
-            "발행처":     meta.get("publisher", ""),
-            "발행지":     meta.get("pub_location", ""),
-            "발행년도":   meta.get("pub_year", ""),
+            "제목":       meta.get("aladin_title", ""),
+            "발행처":     meta.get("publisher_raw", ""),
+            "발행지":     meta.get("place_display", ""),
+            "발행년도":   meta.get("pubyear", ""),
             "260필드":    _extract_field(mrk, "260"),
             "300필드":    _extract_field(mrk, "300"),
             "발행지 출처": _SOURCE_LABEL.get(meta.get("bundle_source", ""), meta.get("bundle_source", "")),
