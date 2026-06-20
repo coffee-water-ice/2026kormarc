@@ -34,21 +34,23 @@ _PUBLISHER_DB_CACHE: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, s
 def get_aladin_item_by_isbn(isbn: str, secrets: dict) -> tuple[dict, str | None]:
     """
     알라딘 OpenAPI에서 ISBN으로 도서 item 1건을 조회한다.
+    ALADIN_TTB_KEY → ALADIN_TTB_KEY2 → ALADIN_TTB_KEY3 순으로 fallback.
 
     Returns:
         (item dict, error msg or None)
     """
-    key = (
-        (secrets or {}).get("ALADIN_TTB_KEY")
-        or (secrets or {}).get("aladin_ttb_key")
-        or ""
-    )
-    if not key:
+    s = secrets or {}
+    keys = [
+        (name, s.get(name) or s.get(name.lower()) or "")
+        for name in ("ALADIN_TTB_KEY", "ALADIN_TTB_KEY2", "ALADIN_TTB_KEY3")
+    ]
+    keys = [(name, k) for name, k in keys if k]
+
+    if not keys:
         return {}, "ALADIN_TTB_KEY가 설정되지 않았습니다."
 
     url = "http://www.aladin.co.kr/ttb/api/ItemLookUp.aspx"
-    params = {
-        "ttbkey": key,
+    base_params = {
         "itemIdType": "ISBN13",
         "ItemId": isbn,
         "output": "js",
@@ -56,16 +58,29 @@ def get_aladin_item_by_isbn(isbn: str, secrets: dict) -> tuple[dict, str | None]
         "OptResult": "ebookList,usedList,reviewList,fileFormatList,packing,subbarcode",
         "Cover": "Big",
     }
-    try:
-        res = requests.get(url, params=params, timeout=15)
-        res.raise_for_status()
-        data = res.json()
-        items = data.get("item", []) if isinstance(data, dict) else []
-        if not items:
-            return {}, f"알라딘 검색 결과 없음: {isbn}"
-        return items[0], None
-    except Exception as e:
-        return {}, f"알라딘 API 조회 실패: {e}"
+
+    last_err: str = ""
+    for key_name, key in keys:
+        try:
+            res = requests.get(url, params={"ttbkey": key, **base_params}, timeout=15)
+            res.raise_for_status()
+            data = res.json()
+            # 알라딘 API 오류 응답 (한도 초과·키 오류 등) → 다음 키로
+            if isinstance(data, dict) and data.get("errorCode"):
+                last_err = (
+                    f"{key_name} 오류 (code={data['errorCode']}): "
+                    f"{data.get('errorMessage', '')}"
+                )
+                continue
+            items = data.get("item", []) if isinstance(data, dict) else []
+            if not items:
+                return {}, f"알라딘 검색 결과 없음: {isbn}"
+            return items[0], None
+        except Exception as e:
+            last_err = f"{key_name} 예외: {e}"
+            continue
+
+    return {}, last_err or f"알라딘 API 조회 실패: {isbn}"
 
 def normalize_publisher_name(name: str) -> str:
     """출판사명 표준화 (공백·법인격·괄호 제거, 소문자 변환)."""
