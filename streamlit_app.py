@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import re
 
 import pandas as pd
@@ -51,16 +50,8 @@ def _results_to_dataframe(results: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _to_excel_bytes(df: pd.DataFrame) -> bytes:
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="MARC변환결과")
-        ws = writer.sheets["MARC변환결과"]
-        # 열 너비 자동 조정
-        for col_cells in ws.columns:
-            max_len = max((len(str(c.value or "")) for c in col_cells), default=10)
-            ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 60)
-    return buf.getvalue()
+def _to_csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
 
 
 # ── 탭 구성 ────────────────────────────────────────────────────
@@ -230,10 +221,10 @@ with tab_batch:
         st.success(f"변환 완료 — 성공 {success_count}건 / 실패 {fail_count}건")
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-        excel_bytes = _to_excel_bytes(df)
+        csv_bytes = _to_csv_bytes(df)
         st.download_button(
-            label="엑셀 파일 다운로드 (.xlsx)",
-            data=excel_bytes,
-            file_name="marc_변환결과.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            label="CSV 파일 다운로드 (.csv)",
+            data=csv_bytes,
+            file_name="marc_변환결과.csv",
+            mime="text/csv",
         )
