@@ -44,32 +44,34 @@ def clear_debug_lines():
 # 260 — 발행사항
 # ============================================================
 
-def build_260(place_display: str, publisher_name: str, pubyear: str) -> str:
+def build_260(
+    place_display: str, publisher_name: str, pubyear: str, publisher_name2: str = ""
+) -> str:
     """
     260 MRK 문자열을 생성한다.
 
-    Args:
-        place_display:   정규화된 발행지 표시명 (예: "서울", "발행지 미상")
-        publisher_name:  출판사명 원본 (예: "민음사")
-        pubyear:         발행연도 4자리 문자열 (예: "2023")
-
-    Returns:
-        MRK 한 줄 문자열 (예: "=260  \\\\$a서울 :$b민음사,$c2023")
+    publisher_name2: 임프린트·KPIPA 등에서 알라딘 출판사명과 다른 발행처가
+                     확인된 경우 두 번째 $b로 추가된다.
+                     예) "=260  \\\\$a파주 :$b요요 :$b다산북스,$c2022"
     """
     place = place_display or "발행지 미상"
     pub   = publisher_name or "발행처 미상"
     year  = pubyear or "발행년 미상"
+    if publisher_name2:
+        return f"=260  \\\\$a{place} :$b{pub} :$b{publisher_name2},$c{year}"
     return f"=260  \\\\$a{place} :$b{pub},$c{year}"
 
 
-def build_260_field(place_display: str, publisher_name: str, pubyear: str) -> tuple[str, Field | None]:
+def build_260_field(
+    place_display: str, publisher_name: str, pubyear: str, publisher_name2: str = ""
+) -> tuple[str, Field | None]:
     """
     260 MRK 문자열과 pymarc.Field 객체를 함께 반환한다.
 
     Returns:
         (mrk_str, Field 객체)  — Field 변환 실패 시 (mrk_str, None)
     """
-    tag_260 = build_260(place_display, publisher_name, pubyear)
+    tag_260 = build_260(place_display, publisher_name, pubyear, publisher_name2)
     f_260 = mrk_str_to_field(tag_260)
     return tag_260, f_260
 

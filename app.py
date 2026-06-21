@@ -170,10 +170,12 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
 
         # ── 260 ──────────────────────────────────────────────
         bundle = build_pub_location_bundle(isbn, publisher_raw, secrets)
+        secondary_pub = bundle.get("secondary_publisher", "")
         tag_260, f_260 = build_260_field(
             place_display=bundle["place_display"],
             publisher_name=publisher_raw,
             pubyear=pubyear,
+            publisher_name2=secondary_pub,
         )
 
         # ── 300 ──────────────────────────────────────────────
@@ -203,6 +205,7 @@ def _run_conversion(req: ConvertRequest, secrets: dict) -> ConvertResult:
             "toc_text": illus_diag.get("toc_text", ""),
             "illus_diagnosis": illus_diag.get("illus_diagnosis", {}),
             "bundle_source": bundle.get("source"),
+            "secondary_publisher": secondary_pub,
             "debug_lines": bundle.get("debug", []),
         }
 

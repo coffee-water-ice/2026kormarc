@@ -621,6 +621,7 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
         place_raw: str | None = None
         source = "FALLBACK"
         resolved = (publisher_name_raw or "").strip()
+        secondary_publisher = ""
 
         # [1] ISBN 접두부 → ISBN발행자번호-발행지 연결표
         place_raw, isbn_msgs = search_location_by_isbn_prefix(isbn, isbn_prefix_dict)
@@ -650,6 +651,9 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
                     if place_raw not in _UNKNOWN:
                         resolved = kpipa_pub
                         source = "KPIPA_API→DB"
+                        # 알라딘 출판사명과 KPIPA 출판사명이 다르면 두 번째 발행처로 기록
+                        if normalize_publisher_name(kpipa_pub) != normalize_publisher_name(publisher_name_raw or ""):
+                            secondary_publisher = kpipa_pub
                 else:
                     debug.append(
                         f"KPIPA API 응답 있음 (resultCode={result_code}) → PublisherName 없음"
@@ -689,6 +693,7 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
                 if place_raw not in _UNKNOWN:
                     resolved = aladin_rep
                     source = "ALADIN→IMPRINT→DB"
+                    secondary_publisher = imprint_main  # 알라딘명이 임프린트, 모회사를 두 번째 발행처로
 
             # [5] IMPRINT → 행안부 API
             # imprint 매칭 성공 시 메인 출판사명으로, 실패 시 알라딘 대표명으로 검색
@@ -701,6 +706,8 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
                     place_raw = mois_addr
                     resolved = aladin_rep
                     source = "ALADIN→IMPRINT→MOIS"
+                    if imprint_main:
+                        secondary_publisher = imprint_main
 
         # 최종 fallback
         if not place_raw or place_raw in _UNKNOWN:
@@ -711,20 +718,22 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
         country_code  = get_country_code_by_region(place_raw, region_data)
 
         return {
-            "place_raw":          place_raw,
-            "place_display":      place_display,
-            "country_code":       country_code,
-            "resolved_publisher": resolved,
-            "source":             source,
-            "debug":              debug,
+            "place_raw":           place_raw,
+            "place_display":       place_display,
+            "country_code":        country_code,
+            "resolved_publisher":  resolved,
+            "secondary_publisher": secondary_publisher,
+            "source":              source,
+            "debug":               debug,
         }
 
     except Exception as e:
         return {
-            "place_raw":          "발행지 미상",
-            "place_display":      "발행지 미상",
-            "country_code":       "   ",
-            "resolved_publisher": publisher_name_raw or "",
-            "source":             "ERROR",
-            "debug":              [f"예외: {e}"],
+            "place_raw":           "발행지 미상",
+            "place_display":       "발행지 미상",
+            "country_code":        "   ",
+            "resolved_publisher":  publisher_name_raw or "",
+            "secondary_publisher": "",
+            "source":              "ERROR",
+            "debug":               [f"예외: {e}"],
         }
