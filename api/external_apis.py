@@ -24,7 +24,7 @@ from bs4 import BeautifulSoup
 
 # 전역 캐시 변수 (매 요청마다 구글 시트를 다시 읽지 않도록 방지)
 # isbn_prefix_dict: {isbn_prefix(str) → 발행지(str)} — iterrows 대신 O(1) dict 조회용
-_PUBLISHER_DB_CACHE: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, str]] | None = None
+_PUBLISHER_DB_CACHE: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, tuple[str, str]]] | None = None
 
 
 # ============================================================
@@ -218,20 +218,21 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
     # "ISBN발행자번호-발행지 연결표" 시트 로드
     # 행 구조: [No, 발행자명, isbn_prefix_1, ..., isbn_prefix_9, 발행지]  (12열)
     # → col[0]=No, col[1]=발행자명, col[2..10]=ISBN 접두부, col[11]=발행지
-    # dict {prefix: 발행지} 로 빌드 — 검색 시 O(1) 조회를 위해 DataFrame 대신 사용
+    # dict {prefix: (발행지, 발행자명)} — 이중 발행처 비교를 위해 발행자명도 보존
     # 동일 접두부가 여러 발행지를 가질 경우 첫 번째 값 유지 (선입 우선)
     isbn_loc_rows = sh.worksheet("ISBN발행자번호-발행지 연결표").get_all_values()[1:]
-    isbn_prefix_dict: dict[str, str] = {}
+    isbn_prefix_dict: dict[str, tuple[str, str]] = {}
     for row in isbn_loc_rows:
         if not row:
             continue
         location = row[-1].strip() if row else ""
         if not location:
             continue
+        pub_name = row[1].strip() if len(row) > 1 else ""
         for cell in row[2:-1]:  # No(0)·발행자명(1) 제외, 발행지(-1) 제외
             prefix = re.sub(r"\D", "", str(cell))
             if 5 <= len(prefix) <= 13 and prefix not in isbn_prefix_dict:
-                isbn_prefix_dict[prefix] = location
+                isbn_prefix_dict[prefix] = (location, pub_name)
 
     result = (publisher_data, region_data, imprint_data, isbn_prefix_dict)
     _PUBLISHER_DB_CACHE = result
@@ -243,40 +244,40 @@ def load_publisher_db(secrets: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
 # ============================================================
 
 def search_location_by_isbn_prefix(
-    isbn: str, isbn_prefix_dict: dict[str, str]
-) -> tuple[str, list[str]]:
+    isbn: str, isbn_prefix_dict: dict[str, tuple[str, str]]
+) -> tuple[str, str, list[str]]:
     """
-    'ISBN발행자번호-발행지 연결표' dict에서 ISBN 접두부 매칭으로 발행지를 찾는다.
+    'ISBN발행자번호-발행지 연결표' dict에서 ISBN 접두부 매칭으로 발행지와 발행자명을 찾는다.
 
     긴 접두부(더 구체적)부터 짧은 접두부 순으로 dict 키를 조회하므로
     최장 매칭이 우선된다. 검색 비용은 O(접두부 길이 범위) = O(9).
 
     Args:
         isbn:             13자리 ISBN (하이픈 포함/미포함 모두 처리)
-        isbn_prefix_dict: {isbn_prefix → 발행지}
+        isbn_prefix_dict: {isbn_prefix → (발행지, 발행자명)}
 
     Returns:
-        (발행지 또는 "출판지 미상", 디버그 메시지 목록)
+        (발행지 또는 "출판지 미상", 발행자명 또는 "", 디버그 메시지 목록)
     """
     debug: list[str] = []
     isbn_clean = re.sub(r"\D", "", isbn or "")
 
     if len(isbn_clean) != 13:
-        return "출판지 미상", [f"❌ ISBN 접두부 검색 불가: 13자리 아님 ({isbn_clean})"]
+        return "출판지 미상", "", [f"❌ ISBN 접두부 검색 불가: 13자리 아님 ({isbn_clean})"]
 
     if not isbn_prefix_dict:
-        return "출판지 미상", ["❌ ISBN발행자번호-발행지 연결표가 비어 있음"]
+        return "출판지 미상", "", ["❌ ISBN발행자번호-발행지 연결표가 비어 있음"]
 
     # 길이 13→5 순으로 줄여가며 dict 조회 — 첫 번째 히트가 최장 매칭
     for length in range(13, 4, -1):
         prefix = isbn_clean[:length]
         if prefix in isbn_prefix_dict:
-            location = isbn_prefix_dict[prefix]
-            debug.append(f"✅ ISBN 접두부 매칭 성공: {prefix}… → {location}")
-            return location, debug
+            location, pub_name = isbn_prefix_dict[prefix]
+            debug.append(f"✅ ISBN 접두부 매칭 성공: {prefix}… → {location} ({pub_name})")
+            return location, pub_name, debug
 
     debug.append(f"❌ ISBN 접두부 매칭 실패: {isbn_clean}")
-    return "출판지 미상", debug
+    return "출판지 미상", "", debug
 
 
 def search_publisher_location_with_alias(
@@ -618,16 +619,24 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
         publisher_data, region_data, imprint_data, isbn_prefix_dict = load_publisher_db(secrets)
         debug.append("✓ 구글시트 DB 적재 성공")
 
+        # 알라딘 출판사 대표명 분리 (이중 발행처 비교 기준 — 모든 경로에서 공통 사용)
+        aladin_rep, _ = split_publisher_aliases(publisher_name_raw or "")
+        aladin_rep = aladin_rep or (publisher_name_raw or "").strip()
+
         place_raw: str | None = None
         source = "FALLBACK"
-        resolved = (publisher_name_raw or "").strip()
+        resolved = aladin_rep
         secondary_publisher = ""
 
         # [1] ISBN 접두부 → ISBN발행자번호-발행지 연결표
-        place_raw, isbn_msgs = search_location_by_isbn_prefix(isbn, isbn_prefix_dict)
+        place_raw, db_publisher, isbn_msgs = search_location_by_isbn_prefix(isbn, isbn_prefix_dict)
         debug += isbn_msgs
         if place_raw not in _UNKNOWN:
             source = "ISBN_PREFIX_DB"
+            # DB 발행자명이 알라딘 출판사와 다르면 두 번째 발행처로 기록
+            if db_publisher and normalize_publisher_name(db_publisher) != normalize_publisher_name(aladin_rep):
+                secondary_publisher = db_publisher
+                debug.append(f"→ 이중 발행처: 알라딘({aladin_rep}) ≠ DB({db_publisher})")
 
         # [2] KPIPA API 출판사명 → KPIPA DB
         if place_raw in _UNKNOWN:
@@ -651,17 +660,13 @@ def build_pub_location_bundle(isbn: str, publisher_name_raw: str, secrets: dict)
                     if place_raw not in _UNKNOWN:
                         resolved = kpipa_pub
                         source = "KPIPA_API→DB"
-                        # 알라딘 출판사명과 KPIPA 출판사명이 다르면 두 번째 발행처로 기록
-                        if normalize_publisher_name(kpipa_pub) != normalize_publisher_name(publisher_name_raw or ""):
+                        if normalize_publisher_name(kpipa_pub) != normalize_publisher_name(aladin_rep):
                             secondary_publisher = kpipa_pub
+                            debug.append(f"→ 이중 발행처: 알라딘({aladin_rep}) ≠ KPIPA({kpipa_pub})")
                 else:
                     debug.append(
                         f"KPIPA API 응답 있음 (resultCode={result_code}) → PublisherName 없음"
                     )
-
-        # 알라딘 출판사 대표명 분리 (steps 3-5 공통)
-        aladin_rep, _ = split_publisher_aliases(publisher_name_raw or "")
-        aladin_rep = aladin_rep or (publisher_name_raw or "").strip()
 
         # [3] 알라딘 출판사명 → KPIPA DB
         if place_raw in _UNKNOWN:
