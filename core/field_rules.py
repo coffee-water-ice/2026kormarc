@@ -44,6 +44,18 @@ def clear_debug_lines():
 # 260 — 발행사항
 # ============================================================
 
+# 260 $b 표시용 법인격 제거 패턴
+# normalize_publisher_name()은 비교 전용(소문자·공백 제거) — 표시용은 별도 처리
+_PUB_LEGAL_RE = re.compile(
+    r"㈜|㈔|\(주\)|\(재\)|주식회사\s*|Co\.,?\s*Ltd\.?|Inc\.?|\([A-Za-z][^)]*\)",
+    flags=re.IGNORECASE,
+)
+
+def _clean_pub_name(name: str) -> str:
+    """260 $b 표시용: 법인격 표기(㈜·주식회사·Co.,Ltd. 등) 및 괄호 영문명 제거."""
+    return _PUB_LEGAL_RE.sub("", name or "").strip(" ,.")
+
+
 def build_260(
     place_display: str, publisher_name: str, pubyear: str, publisher_name2: str = ""
 ) -> str:
@@ -55,10 +67,12 @@ def build_260(
                      예) "=260  \\\\$a파주 :$b요요 :$b다산북스,$c2022"
     """
     place = place_display or "발행지 미상"
-    pub   = publisher_name or "발행처 미상"
+    pub   = _clean_pub_name(publisher_name) or "발행처 미상"
     year  = pubyear or "발행년 미상"
     if publisher_name2:
-        return f"=260  \\\\$a{place} :$b{pub} :$b{publisher_name2},$c{year}"
+        pub2 = _clean_pub_name(publisher_name2)
+        if pub2:
+            return f"=260  \\\\$a{place} :$b{pub} :$b{pub2},$c{year}"
     return f"=260  \\\\$a{place} :$b{pub},$c{year}"
 
 
