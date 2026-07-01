@@ -47,12 +47,16 @@ def clear_debug_lines():
 # 260 $b 표시용 법인격 제거 패턴
 # normalize_publisher_name()은 비교 전용(소문자·공백 제거) — 표시용은 별도 처리
 _PUB_LEGAL_RE = re.compile(
-    r"㈜|㈔|\(주\)|\(재\)|주식회사\s*|Co\.,?\s*Ltd\.?|Inc\.?|\([A-Za-z][^)]*\)",
+    r"㈜|㈔"
+    r"|\(주\)|\(재\)|\(주식회사\)|\(유한회사\)|\(사단법인\)|\(재단법인\)"
+    r"|주식회사\s*|유한회사\s*"
+    r"|Co\.,?\s*Ltd\.?|Inc\.?"
+    r"|\([A-Za-z][^)]*\)",   # 괄호 영문명 (MinumSa) 등
     flags=re.IGNORECASE,
 )
 
 def _clean_pub_name(name: str) -> str:
-    """260 $b 표시용: 법인격 표기(㈜·주식회사·Co.,Ltd. 등) 및 괄호 영문명 제거."""
+    """260 $b 표시용: 법인격 표기(㈜·(주식회사)·주식회사·Co.,Ltd. 등) 제거."""
     return _PUB_LEGAL_RE.sub("", name or "").strip(" ,.")
 
 
